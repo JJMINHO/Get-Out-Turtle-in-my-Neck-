@@ -21,19 +21,25 @@ class DeskPoseApp(rumps.App):
         self.latest_scores = None
         self.score_lock = threading.Lock()
 
+        self.status_item = rumps.MenuItem("Status: Waiting...")
         self.start_stop_button = rumps.MenuItem("Start Monitoring", callback=self.toggle_monitoring)
-        self.reset_calibration_button = rumps.MenuItem("Reset Posture Calibration", callback=self.reset_calibration)
+        self.dashboard_button = rumps.MenuItem("Show Dashboard", callback=self.toggle_dashboard)
         self.debug_button = rumps.MenuItem("Show Debug Window", callback=self.toggle_debug)
         self.summary_button = rumps.MenuItem("Show Session Summary", callback=self.show_session_summary)
         self.open_outputs_button = rumps.MenuItem("Open Outputs Folder", callback=self.open_outputs_folder)
+        self.reset_calibration_button = rumps.MenuItem("Reset Posture Calibration", callback=self.reset_calibration)
 
         self.menu = [
             self.start_stop_button,
-            self.reset_calibration_button,
-            self.debug_button,
             None,
+            self.status_item,
+            None,
+            self.dashboard_button,
+            self.debug_button,
             self.summary_button,
             self.open_outputs_button,
+            None,
+            self.reset_calibration_button,
         ]
 
         # rumps UI updates are safest from the app event loop.
@@ -41,6 +47,8 @@ class DeskPoseApp(rumps.App):
         self.refresh_timer.start()
         self.debug_timer = rumps.Timer(self.refresh_debug_window, 0.1)
         self.debug_timer.start()
+        self.dashboard_timer = rumps.Timer(self.refresh_dashboard_window, 0.1)
+        self.dashboard_timer.start()
 
     def toggle_monitoring(self, sender):
         if not self.is_monitoring:
@@ -61,6 +69,14 @@ class DeskPoseApp(rumps.App):
         else:
             self.worker.set_debug(True)
             self.debug_button.title = "Hide Debug Window"
+
+    def toggle_dashboard(self, sender):
+        if self.worker.show_dashboard:
+            self.worker.set_dashboard(False)
+            self.dashboard_button.title = "Show Dashboard"
+        else:
+            self.worker.set_dashboard(True)
+            self.dashboard_button.title = "Hide Dashboard"
 
     def reset_calibration(self, sender):
         self.worker.reset_calibration()
@@ -86,14 +102,17 @@ class DeskPoseApp(rumps.App):
     def refresh_title(self, _sender):
         """Refresh the menu bar title from the app event loop."""
         self.debug_button.title = "Hide Debug Window" if self.worker.show_debug else "Show Debug Window"
+        self.dashboard_button.title = "Hide Dashboard" if self.worker.show_dashboard else "Show Dashboard"
 
         if not self.is_monitoring:
+            self.status_item.title = "Status: Idle"
             return
 
         with self.score_lock:
             scores = self.latest_scores
 
         if not scores:
+            self.status_item.title = "Status: Analyzing..."
             return
 
         p_score, p_status, f_score, f_status = scores
@@ -104,7 +123,8 @@ class DeskPoseApp(rumps.App):
         else:
             emoji = "🟢"
 
-        self.title = f"{emoji} P:{p_score} F:{f_score}"
+        self.title = f"{emoji} P: {p_score} │ F: {f_score}"
+        self.status_item.title = f"Posture: {p_status}  |  Focus: {f_status}"
 
     def refresh_debug_window(self, _sender):
         """Display the latest debug frame from the app event loop."""
@@ -113,10 +133,19 @@ class DeskPoseApp(rumps.App):
         else:
             self.worker.close_debug_window()
 
+    def refresh_dashboard_window(self, _sender):
+        """Display the latest dashboard frame from the app event loop."""
+        if self.is_monitoring and self.worker.show_dashboard:
+            self.worker.show_latest_dashboard_frame()
+        else:
+            self.worker.close_dashboard_window()
+
     def quit(self, sender):
         self.refresh_timer.stop()
         self.debug_timer.stop()
+        self.dashboard_timer.stop()
         if self.worker:
             self.worker.stop()
             self.worker.close_debug_window()
+            self.worker.close_dashboard_window()
         super().quit(sender)

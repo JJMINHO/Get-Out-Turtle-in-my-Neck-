@@ -28,6 +28,20 @@ class CameraWorker:
         self.debug_window_created = False
         self.latest_debug_frame = None
         self.debug_frame_lock = threading.Lock()
+
+        self.show_dashboard = False
+        self.dashboard_window_created = False
+        self.latest_dashboard_frame = None
+        self.dashboard_frame_lock = threading.Lock()
+
+        self.session_start_time = None
+        self.focused_time = 0.0
+        self.good_posture_time = 0.0
+        self.bad_posture_time = 0.0
+        self.score_sum_p = 0.0
+        self.score_sum_f = 0.0
+        self.score_count = 0
+        self.last_frame_time = None
         self.thread = None
         self.ui_callback = ui_callback
 
@@ -60,6 +74,14 @@ class CameraWorker:
         if not self.is_running:
             self.posture_calculator.reset_calibration()
             self.eye_analyzer.reset()
+            self.session_start_time = time.time()
+            self.focused_time = 0.0
+            self.good_posture_time = 0.0
+            self.bad_posture_time = 0.0
+            self.score_sum_p = 0.0
+            self.score_sum_f = 0.0
+            self.score_count = 0
+            self.last_frame_time = time.time()
             self.is_running = True
             self.thread = threading.Thread(target=self._run_loop, daemon=True)
             self.thread.start()
@@ -78,6 +100,15 @@ class CameraWorker:
             print("Debug window disabled.")
             with self.debug_frame_lock:
                 self.latest_debug_frame = None
+
+    def set_dashboard(self, state):
+        self.show_dashboard = state
+        if state:
+            print("Dashboard window requested.")
+        else:
+            print("Dashboard window disabled.")
+            with self.dashboard_frame_lock:
+                self.latest_dashboard_frame = None
 
     def reset_calibration(self):
         self.posture_calculator.reset_calibration()
@@ -144,6 +175,22 @@ class CameraWorker:
                 self.ui_callback(p_score, p_status, f_score, f_status)
 
             current_time = time.time()
+            if self.last_frame_time is None:
+                self.last_frame_time = current_time
+            delta_time = current_time - self.last_frame_time
+            self.last_frame_time = current_time
+
+            self.score_sum_p += p_score
+            self.score_sum_f += f_score
+            self.score_count += 1
+
+            if f_status == "Focused":
+                self.focused_time += delta_time
+            if p_status == "Good":
+                self.good_posture_time += delta_time
+            elif p_status == "Bad":
+                self.bad_posture_time += delta_time
+
             if current_time - last_log_time >= 1.0:
                 self._log_data(p_score, p_status, neck_angle, shoulder_slope, torso_lean,
                                face_shoulder_delta, turtle_neck_risk, slouch_delta, slouch_risk,
@@ -172,6 +219,20 @@ class CameraWorker:
             else:
                 with self.debug_frame_lock:
                     self.latest_debug_frame = None
+
+            if self.show_dashboard:
+                try:
+                    dashboard_frame = self._build_dashboard_frame(frame)
+                    with self.dashboard_frame_lock:
+                        self.latest_dashboard_frame = dashboard_frame
+                except Exception as exc:
+                    print(f"Dashboard window error: {exc}")
+                    self.show_dashboard = False
+                    with self.dashboard_frame_lock:
+                        self.latest_dashboard_frame = None
+            else:
+                with self.dashboard_frame_lock:
+                    self.latest_dashboard_frame = None
 
             time.sleep(config.UPDATE_INTERVAL_SECONDS)
 
@@ -237,6 +298,111 @@ class CameraWorker:
     def close_debug_window(self):
         self._close_debug_window()
 
+    def show_latest_dashboard_frame(self):
+        with self.dashboard_frame_lock:
+            dashboard_frame = None if self.latest_dashboard_frame is None else self.latest_dashboard_frame.copy()
+
+        if dashboard_frame is None:
+            return
+
+        if not self.dashboard_window_created:
+            cv2.namedWindow(config.DASHBOARD_WINDOW_NAME, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(config.DASHBOARD_WINDOW_NAME, dashboard_frame.shape[1], dashboard_frame.shape[0])
+            self.dashboard_window_created = True
+
+        cv2.imshow(config.DASHBOARD_WINDOW_NAME, dashboard_frame)
+        cv2.waitKey(1)
+
+    def close_dashboard_window(self):
+        if not self.dashboard_window_created:
+            return
+        try:
+            if cv2.getWindowProperty(config.DASHBOARD_WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
+                cv2.destroyWindow(config.DASHBOARD_WINDOW_NAME)
+        except cv2.error:
+            pass
+        finally:
+            self.dashboard_window_created = False
+
+    def _build_dashboard_frame(self, frame):
+        video_frame = frame.copy()
+        
+        session_time = time.time() - self.session_start_time if self.session_start_time else 0.0
+        avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
+        avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
+        
+        panel = self._build_dashboard_panel(video_frame.shape[0], session_time, avg_p, avg_f)
+        dashboard_frame = np.hstack([video_frame, panel])
+        return dashboard_frame
+
+    def _build_dashboard_panel(self, panel_height, session_time, avg_p, avg_f):
+        panel_width = config.DASHBOARD_PANEL_WIDTH
+        panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
+        # Deep slate/navy background
+        panel[:] = (35, 25, 18)
+
+        # Header
+        self._draw_panel_text(panel, "DESKPOSE", 24, 40, 0.7, (250, 250, 250), 2)
+        self._draw_panel_text(panel, "COACH", 148, 40, 0.7, (250, 180, 50), 2)
+        
+        m, s = divmod(int(session_time), 60)
+        h, m = divmod(m, 60)
+        time_str = f"{h:02d}:{m:02d}:{s:02d}"
+        
+        # Time pill
+        cv2.rectangle(panel, (230, 22), (326, 46), (55, 45, 38), -1)
+        self._draw_panel_text(panel, f" {time_str}", 242, 38, 0.45, (200, 200, 200), 1)
+
+        # Separator line
+        cv2.line(panel, (24, 64), (326, 64), (60, 50, 40), 1)
+
+        # Big Average Score Cards
+        y = 90
+        color_p = self._score_color(avg_p, config.GOOD_THRESHOLD)
+        color_f = self._score_color(avg_f, config.FOCUSED_THRESHOLD)
+        
+        # Posture Card
+        self._draw_transparent_rect(panel, 24, y, 145, 90, (255, 255, 255), 0.05)
+        cv2.line(panel, (24, y), (24, y+90), color_p, 3)
+        self._draw_panel_text(panel, "AVG POSTURE", 40, y + 26, 0.4, (160, 160, 160), 1)
+        self._draw_panel_text(panel, f"{avg_p}", 40, y + 70, 1.2, color_p, 3)
+
+        # Focus Card
+        self._draw_transparent_rect(panel, 181, y, 145, 90, (255, 255, 255), 0.05)
+        cv2.line(panel, (181, y), (181, y+90), color_f, 3)
+        self._draw_panel_text(panel, "AVG FOCUS", 197, y + 26, 0.4, (160, 160, 160), 1)
+        self._draw_panel_text(panel, f"{avg_f}", 197, y + 70, 1.2, color_f, 3)
+
+        # Statistics blocks
+        y += 120
+        self._draw_panel_text(panel, "SESSION STATISTICS", 24, y + 15, 0.4, (130, 130, 130), 1)
+        y += 35
+
+        focused_pct = (self.focused_time / session_time * 100) if session_time > 0 else 0
+        good_pct = (self.good_posture_time / session_time * 100) if session_time > 0 else 0
+
+        y = self._draw_vibrant_row(panel, "Focused Time", f"{int(self.focused_time)}s", f"{focused_pct:.1f}%", color_f, y)
+        y = self._draw_vibrant_row(panel, "Good Posture", f"{int(self.good_posture_time)}s", f"{good_pct:.1f}%", color_p, y)
+        y = self._draw_vibrant_row(panel, "Bad Posture", f"{int(self.bad_posture_time)}s", "", (113, 113, 248), y)
+
+        return panel
+
+    def _draw_transparent_rect(self, img, x, y, w, h, color, alpha):
+        overlay = img.copy()
+        cv2.rectangle(overlay, (x, y), (x+w, y+h), color, -1)
+        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+
+    def _draw_vibrant_row(self, panel, label, val1, val2, accent_color, y):
+        self._draw_transparent_rect(panel, 24, y, 302, 38, (255, 255, 255), 0.03)
+        cv2.circle(panel, (36, y + 19), 4, accent_color, -1)
+        
+        self._draw_panel_text(panel, label, 52, y + 23, 0.45, (220, 220, 220), 1)
+        self._draw_panel_text(panel, val1, 180, y + 23, 0.45, (255, 255, 255), 1)
+        if val2:
+            self._draw_panel_text(panel, val2, 255, y + 23, 0.45, accent_color, 1)
+            
+        return y + 46
+
     def _build_debug_frame(self, frame, pose_results, face_results, p_score, p_status,
                           neck_angle, shoulder_slope, torso_lean,
                           face_shoulder_delta, turtle_neck_risk, slouch_delta, slouch_risk,
@@ -282,25 +448,26 @@ class CameraWorker:
                            head_pose, eye_x, eye_y, eye_result, distance_result):
         panel_width = config.DEBUG_PANEL_WIDTH
         panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
-        panel[:] = (24, 24, 24)
+        panel[:] = (18, 18, 18)
 
-        self._draw_panel_text(panel, "DeskPose Coach", 22, 34, 0.72, (245, 245, 245), 2)
-        self._draw_panel_text(panel, time.strftime("%H:%M:%S"), 250, 34, 0.5, (160, 160, 160), 1)
-        self._draw_status_pill(panel, study_state, 22, 52, self._state_color(study_state))
+        # Header
+        self._draw_panel_text(panel, "DESKPOSE COACH", 24, 38, 0.65, (230, 230, 230), 2)
+        self._draw_panel_text(panel, time.strftime("%H:%M:%S"), 280, 38, 0.5, (120, 120, 120), 1)
+        self._draw_status_pill(panel, study_state, 24, 58, self._state_color(study_state))
 
-        y = 92
+        y = 100
         y = self._draw_score_cards(panel, p_score, p_status, f_score, f_status, y)
-        y += 12
+        y += 16
 
-        y = self._draw_section_title(panel, "Posture", y)
+        y = self._draw_section_title(panel, "Posture Metrics", y)
         y = self._draw_metric_row(panel, "Head offset", neck_angle, "%", y)
         y = self._draw_metric_row(panel, "Face ratio +", face_shoulder_delta, "", y)
         y = self._draw_metric_row(panel, "Turtle risk", turtle_neck_risk, "", y)
         y = self._draw_metric_row(panel, "Slouch +", slouch_delta, "", y)
         y = self._draw_metric_row(panel, "Slouch risk", slouch_risk, "", y)
 
-        y += 8
-        y = self._draw_section_title(panel, "Focus", y)
+        y += 12
+        y = self._draw_section_title(panel, "Focus Metrics", y)
         y = self._draw_metric_row(panel, "Distance", distance_result["distance_state"], "", y)
         y = self._draw_metric_row(panel, "Gaze zone", gaze_zone, "", y)
         y = self._draw_metric_row(panel, "Head state", head_pose["head_state"], "", y)
@@ -308,34 +475,38 @@ class CameraWorker:
         y = self._draw_metric_row(panel, "Eye state", eye_result["eye_state"], "", y)
         y = self._draw_metric_row(panel, "Blink count", eye_result["blink_count"], "", y)
 
-        footer_y = panel_height - 34
+        footer_y = panel_height - 24
         if footer_y > y:
-            self._draw_panel_text(panel, "Logs: outputs/posture_focus_log.csv", 22, footer_y, 0.42, (135, 135, 135), 1)
+            self._draw_panel_text(panel, "Logging to: outputs/posture_focus_log.csv", 24, footer_y, 0.4, (100, 100, 100), 1)
         return panel
 
     def _draw_score_cards(self, panel, posture_score, posture_status, focus_score, focus_status, y):
-        self._draw_score_card(panel, "Posture", posture_score, posture_status, 22, y, config.GOOD_THRESHOLD)
-        self._draw_score_card(panel, "Focus", focus_score, focus_status, 202, y, config.FOCUSED_THRESHOLD)
-        return y + 86
+        self._draw_score_card(panel, "POSTURE", posture_score, posture_status, 24, y, config.GOOD_THRESHOLD)
+        self._draw_score_card(panel, "FOCUS", focus_score, focus_status, 200, y, config.FOCUSED_THRESHOLD)
+        return y + 80
 
     def _draw_score_card(self, panel, title, score, status, x, y, good_threshold):
         color = self._score_color(score, good_threshold)
-        cv2.rectangle(panel, (x, y), (x + 156, y + 72), (38, 38, 38), -1)
-        cv2.rectangle(panel, (x, y), (x + 156, y + 72), (62, 62, 62), 1)
-        self._draw_panel_text(panel, title, x + 12, y + 22, 0.48, (170, 170, 170), 1)
-        self._draw_panel_text(panel, f"{score:3d}", x + 12, y + 55, 0.95, color, 2)
-        self._draw_panel_text(panel, status, x + 75, y + 53, 0.46, color, 1)
+        cv2.rectangle(panel, (x, y), (x + 156, y + 70), (28, 28, 28), -1)
+        cv2.rectangle(panel, (x, y), (x + 156, y + 70), (50, 50, 50), 1)
+        cv2.line(panel, (x, y), (x, y + 70), color, 3)
+
+        self._draw_panel_text(panel, title, x + 14, y + 20, 0.4, (160, 160, 160), 1)
+        self._draw_panel_text(panel, f"{score:3d}", x + 14, y + 55, 0.9, (245, 245, 245), 2)
+        self._draw_panel_text(panel, status, x + 76, y + 53, 0.45, color, 1)
 
     def _draw_section_title(self, panel, title, y):
-        cv2.line(panel, (22, y), (358, y), (58, 58, 58), 1)
-        self._draw_panel_text(panel, title.upper(), 22, y + 20, 0.44, (155, 155, 155), 1)
-        return y + 42
+        self._draw_panel_text(panel, title.upper(), 24, y + 15, 0.4, (130, 130, 130), 1)
+        cv2.line(panel, (24, y + 24), (356, y + 24), (45, 45, 45), 1)
+        return y + 44
 
     def _draw_status_pill(self, panel, text, x, y, color):
-        text_width = max(120, min(270, 12 * len(str(text))))
-        cv2.rectangle(panel, (x, y), (x + text_width, y + 24), (42, 42, 42), -1)
-        cv2.rectangle(panel, (x, y), (x + text_width, y + 24), color, 1)
-        self._draw_panel_text(panel, str(text), x + 10, y + 17, 0.45, color, 1)
+        text_str = str(text)
+        (text_w, text_h), _ = cv2.getTextSize(text_str, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        pill_width = text_w + 20
+        cv2.rectangle(panel, (x, y), (x + pill_width, y + 22), (35, 35, 35), -1)
+        cv2.rectangle(panel, (x, y), (x + pill_width, y + 22), color, 1)
+        self._draw_panel_text(panel, text_str, x + 10, y + 16, 0.45, color, 1)
 
     def _draw_score_block(self, panel, title, score, status, y, good_threshold):
         color = self._score_color(score, good_threshold)
@@ -358,12 +529,21 @@ class CameraWorker:
         else:
             value_text = str(value)
 
-        self._draw_panel_text(panel, label, 22, y, 0.43, (185, 185, 185), 1)
-        self._draw_panel_text(panel, value_text, 178, y, 0.45, (245, 245, 245), 1)
-        return y + 16
+        self._draw_panel_text(panel, label, 24, y, 0.42, (170, 170, 170), 1)
+        self._draw_panel_text(panel, value_text, 180, y, 0.45, (235, 235, 235), 1)
+
+        if isinstance(value, float) and 0.0 <= value <= 1.0 and not unit:
+            bar_w = 60
+            bar_x = 296
+            cv2.line(panel, (bar_x, y - 4), (bar_x + bar_w, y - 4), (50, 50, 50), 2)
+            fill_w = int(bar_w * value)
+            if fill_w > 0:
+                cv2.line(panel, (bar_x, y - 4), (bar_x + fill_w, y - 4), (180, 180, 180), 2)
+
+        return y + 20
 
     def _draw_score_bar(self, panel, x, y, width, height, score, color):
-        cv2.rectangle(panel, (x, y), (x + width, y + height), (80, 80, 80), 1)
+        cv2.rectangle(panel, (x, y), (x + width, y + height), (50, 50, 50), 1)
         fill_width = int(width * max(0, min(score, 100)) / 100)
         if fill_width > 0:
             cv2.rectangle(panel, (x, y), (x + fill_width, y + height), color, -1)
@@ -374,17 +554,17 @@ class CameraWorker:
 
     def _score_color(self, score, good_threshold):
         if score >= good_threshold:
-            return (80, 220, 120)
+            return (128, 222, 74)
         if score >= min(config.WARNING_THRESHOLD, config.DISTRACTED_THRESHOLD):
-            return (60, 210, 240)
-        return (80, 90, 240)
+            return (21, 204, 250)
+        return (113, 113, 248)
 
     def _state_color(self, state):
         if state in ["Focused", "Reading"]:
-            return (80, 220, 120)
+            return (128, 222, 74)
         if state in ["Distracted", "Bad Posture"]:
-            return (60, 210, 240)
-        return (80, 90, 240)
+            return (21, 204, 250)
+        return (113, 113, 248)
 
     def _close_debug_window(self):
         if not self.debug_window_created:

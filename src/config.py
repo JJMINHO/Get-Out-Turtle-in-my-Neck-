@@ -58,6 +58,9 @@ STUDY_EVENT_MIN_DURATION_SECONDS = 2.0
 DEBUG_WINDOW_NAME = "DeskPose Coach Debug"
 DEBUG_PANEL_WIDTH = 380
 
+DASHBOARD_WINDOW_NAME = "DeskPose Dashboard"
+DASHBOARD_PANEL_WIDTH = 350
+
 # MediaPipe Tasks model assets (download these into assets/).
 POSE_MODEL_PATH = os.path.join("assets", "pose_landmarker_lite.task")
 FACE_MODEL_PATH = os.path.join("assets", "face_landmarker.task")
