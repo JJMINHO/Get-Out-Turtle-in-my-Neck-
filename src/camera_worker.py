@@ -30,9 +30,8 @@ class CameraWorker:
         self.debug_frame_lock = threading.Lock()
 
         self.show_dashboard = False
-        self.dashboard_window_created = False
-        self.latest_dashboard_frame = None
-        self.dashboard_frame_lock = threading.Lock()
+        self.dashboard_process = None
+        self.dashboard_queue = None
 
         self.session_start_time = None
         self.focused_time = 0.0
@@ -91,6 +90,7 @@ class CameraWorker:
         if self.thread:
             self.thread.join(timeout=2.0)
             self.thread = None
+        self.set_dashboard(False)
 
     def set_debug(self, state):
         self.show_debug = state
@@ -102,13 +102,23 @@ class CameraWorker:
                 self.latest_debug_frame = None
 
     def set_dashboard(self, state):
+        import multiprocessing
         self.show_dashboard = state
         if state:
             print("Dashboard window requested.")
+            if self.dashboard_process is None or not self.dashboard_process.is_alive():
+                from src.dashboard_ui import run_dashboard
+                self.dashboard_queue = multiprocessing.Queue()
+                self.dashboard_process = multiprocessing.Process(target=run_dashboard, args=(self.dashboard_queue,))
+                self.dashboard_process.start()
         else:
             print("Dashboard window disabled.")
-            with self.dashboard_frame_lock:
-                self.latest_dashboard_frame = None
+            if self.dashboard_process is not None and self.dashboard_process.is_alive():
+                if self.dashboard_queue:
+                    self.dashboard_queue.put("QUIT")
+                self.dashboard_process.join(timeout=2)
+            self.dashboard_process = None
+            self.dashboard_queue = None
 
     def reset_calibration(self):
         self.posture_calculator.reset_calibration()
@@ -220,19 +230,33 @@ class CameraWorker:
                 with self.debug_frame_lock:
                     self.latest_debug_frame = None
 
-            if self.show_dashboard:
+            if self.show_dashboard and self.dashboard_queue is not None:
+                session_time = current_time - self.session_start_time if self.session_start_time else 0.0
+                m, s = divmod(int(session_time), 60)
+                h, m = divmod(m, 60)
+                time_str = f"{h:02d}:{m:02d}:{s:02d}"
+                
+                avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
+                avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
+
+                stats = {
+                    "time_str": time_str,
+                    "avg_p": avg_p,
+                    "avg_f": avg_f,
+                    "focused_time": self.focused_time,
+                    "good_posture_time": self.good_posture_time,
+                    "bad_posture_time": self.bad_posture_time
+                }
+                
                 try:
-                    dashboard_frame = self._build_dashboard_frame(frame)
-                    with self.dashboard_frame_lock:
-                        self.latest_dashboard_frame = dashboard_frame
-                except Exception as exc:
-                    print(f"Dashboard window error: {exc}")
-                    self.show_dashboard = False
-                    with self.dashboard_frame_lock:
-                        self.latest_dashboard_frame = None
-            else:
-                with self.dashboard_frame_lock:
-                    self.latest_dashboard_frame = None
+                    while not self.dashboard_queue.empty():
+                        try:
+                            self.dashboard_queue.get_nowait()
+                        except:
+                            break
+                    self.dashboard_queue.put({"frame": frame, "stats": stats})
+                except Exception as e:
+                    print(f"Dashboard queue error: {e}")
 
             time.sleep(config.UPDATE_INTERVAL_SECONDS)
 
@@ -298,110 +322,7 @@ class CameraWorker:
     def close_debug_window(self):
         self._close_debug_window()
 
-    def show_latest_dashboard_frame(self):
-        with self.dashboard_frame_lock:
-            dashboard_frame = None if self.latest_dashboard_frame is None else self.latest_dashboard_frame.copy()
 
-        if dashboard_frame is None:
-            return
-
-        if not self.dashboard_window_created:
-            cv2.namedWindow(config.DASHBOARD_WINDOW_NAME, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(config.DASHBOARD_WINDOW_NAME, dashboard_frame.shape[1], dashboard_frame.shape[0])
-            self.dashboard_window_created = True
-
-        cv2.imshow(config.DASHBOARD_WINDOW_NAME, dashboard_frame)
-        cv2.waitKey(1)
-
-    def close_dashboard_window(self):
-        if not self.dashboard_window_created:
-            return
-        try:
-            if cv2.getWindowProperty(config.DASHBOARD_WINDOW_NAME, cv2.WND_PROP_VISIBLE) >= 1:
-                cv2.destroyWindow(config.DASHBOARD_WINDOW_NAME)
-        except cv2.error:
-            pass
-        finally:
-            self.dashboard_window_created = False
-
-    def _build_dashboard_frame(self, frame):
-        video_frame = frame.copy()
-        
-        session_time = time.time() - self.session_start_time if self.session_start_time else 0.0
-        avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
-        avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
-        
-        panel = self._build_dashboard_panel(video_frame.shape[0], session_time, avg_p, avg_f)
-        dashboard_frame = np.hstack([video_frame, panel])
-        return dashboard_frame
-
-    def _build_dashboard_panel(self, panel_height, session_time, avg_p, avg_f):
-        panel_width = config.DASHBOARD_PANEL_WIDTH
-        panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
-        # Deep slate/navy background
-        panel[:] = (35, 25, 18)
-
-        # Header
-        self._draw_panel_text(panel, "DESKPOSE", 24, 40, 0.7, (250, 250, 250), 2)
-        self._draw_panel_text(panel, "COACH", 148, 40, 0.7, (250, 180, 50), 2)
-        
-        m, s = divmod(int(session_time), 60)
-        h, m = divmod(m, 60)
-        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-        
-        # Time pill
-        cv2.rectangle(panel, (230, 22), (326, 46), (55, 45, 38), -1)
-        self._draw_panel_text(panel, f" {time_str}", 242, 38, 0.45, (200, 200, 200), 1)
-
-        # Separator line
-        cv2.line(panel, (24, 64), (326, 64), (60, 50, 40), 1)
-
-        # Big Average Score Cards
-        y = 90
-        color_p = self._score_color(avg_p, config.GOOD_THRESHOLD)
-        color_f = self._score_color(avg_f, config.FOCUSED_THRESHOLD)
-        
-        # Posture Card
-        self._draw_transparent_rect(panel, 24, y, 145, 90, (255, 255, 255), 0.05)
-        cv2.line(panel, (24, y), (24, y+90), color_p, 3)
-        self._draw_panel_text(panel, "AVG POSTURE", 40, y + 26, 0.4, (160, 160, 160), 1)
-        self._draw_panel_text(panel, f"{avg_p}", 40, y + 70, 1.2, color_p, 3)
-
-        # Focus Card
-        self._draw_transparent_rect(panel, 181, y, 145, 90, (255, 255, 255), 0.05)
-        cv2.line(panel, (181, y), (181, y+90), color_f, 3)
-        self._draw_panel_text(panel, "AVG FOCUS", 197, y + 26, 0.4, (160, 160, 160), 1)
-        self._draw_panel_text(panel, f"{avg_f}", 197, y + 70, 1.2, color_f, 3)
-
-        # Statistics blocks
-        y += 120
-        self._draw_panel_text(panel, "SESSION STATISTICS", 24, y + 15, 0.4, (130, 130, 130), 1)
-        y += 35
-
-        focused_pct = (self.focused_time / session_time * 100) if session_time > 0 else 0
-        good_pct = (self.good_posture_time / session_time * 100) if session_time > 0 else 0
-
-        y = self._draw_vibrant_row(panel, "Focused Time", f"{int(self.focused_time)}s", f"{focused_pct:.1f}%", color_f, y)
-        y = self._draw_vibrant_row(panel, "Good Posture", f"{int(self.good_posture_time)}s", f"{good_pct:.1f}%", color_p, y)
-        y = self._draw_vibrant_row(panel, "Bad Posture", f"{int(self.bad_posture_time)}s", "", (113, 113, 248), y)
-
-        return panel
-
-    def _draw_transparent_rect(self, img, x, y, w, h, color, alpha):
-        overlay = img.copy()
-        cv2.rectangle(overlay, (x, y), (x+w, y+h), color, -1)
-        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
-
-    def _draw_vibrant_row(self, panel, label, val1, val2, accent_color, y):
-        self._draw_transparent_rect(panel, 24, y, 302, 38, (255, 255, 255), 0.03)
-        cv2.circle(panel, (36, y + 19), 4, accent_color, -1)
-        
-        self._draw_panel_text(panel, label, 52, y + 23, 0.45, (220, 220, 220), 1)
-        self._draw_panel_text(panel, val1, 180, y + 23, 0.45, (255, 255, 255), 1)
-        if val2:
-            self._draw_panel_text(panel, val2, 255, y + 23, 0.45, accent_color, 1)
-            
-        return y + 46
 
     def _build_debug_frame(self, frame, pose_results, face_results, p_score, p_status,
                           neck_angle, shoulder_slope, torso_lean,

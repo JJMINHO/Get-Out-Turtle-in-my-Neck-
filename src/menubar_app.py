@@ -47,8 +47,6 @@ class DeskPoseApp(rumps.App):
         self.refresh_timer.start()
         self.debug_timer = rumps.Timer(self.refresh_debug_window, 0.1)
         self.debug_timer.start()
-        self.dashboard_timer = rumps.Timer(self.refresh_dashboard_window, 0.1)
-        self.dashboard_timer.start()
 
     def toggle_monitoring(self, sender):
         if not self.is_monitoring:
@@ -133,19 +131,12 @@ class DeskPoseApp(rumps.App):
         else:
             self.worker.close_debug_window()
 
-    def refresh_dashboard_window(self, _sender):
-        """Display the latest dashboard frame from the app event loop."""
-        if self.is_monitoring and self.worker.show_dashboard:
-            self.worker.show_latest_dashboard_frame()
-        else:
-            self.worker.close_dashboard_window()
+
 
     def quit(self, sender):
         self.refresh_timer.stop()
         self.debug_timer.stop()
-        self.dashboard_timer.stop()
         if self.worker:
             self.worker.stop()
             self.worker.close_debug_window()
-            self.worker.close_dashboard_window()
         super().quit(sender)
