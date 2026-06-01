@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Outputs
+outputs/*.csv
+outputs/*.mp4
+outputs/*.mov
+outputs/*.avi
+outputs/*.png
+
+# Logs
+*.log
+
+# Secrets
+.env
