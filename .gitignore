@@ -24,6 +24,9 @@ outputs/*.mov
 outputs/*.avi
 outputs/*.png
 
+# MediaPipe model assets
+assets/*.task
+
 # Logs
 *.log
 
