@@ -5,6 +5,7 @@ import cv2
 import csv
 import numpy as np
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
@@ -42,6 +43,12 @@ class CameraWorker:
         self.away_time = 0.0
         self.no_face_time = 0.0
         self.drowsy_time = 0.0
+        self.current_bad_posture_seconds = 0
+        self.current_focus_drop_seconds = 0
+        self.current_drowsy_seconds = 0
+        self.last_bad_posture_sound_second = None
+        self.last_focus_drop_sound_second = None
+        self.last_drowsy_sound_second = None
         self.score_sum_p = 0.0
         self.score_sum_f = 0.0
         self.score_count = 0
@@ -86,6 +93,12 @@ class CameraWorker:
             self.away_time = 0
             self.no_face_time = 0
             self.drowsy_time = 0
+            self.current_bad_posture_seconds = 0
+            self.current_focus_drop_seconds = 0
+            self.current_drowsy_seconds = 0
+            self.last_bad_posture_sound_second = None
+            self.last_focus_drop_sound_second = None
+            self.last_drowsy_sound_second = None
             self.score_sum_p = 0.0
             self.score_sum_f = 0.0
             self.score_count = 0
@@ -216,14 +229,28 @@ class CameraWorker:
                     self.focused_time += elapsed_seconds
                 if p_status == "Good":
                     self.good_posture_time += elapsed_seconds
+                    self.current_bad_posture_seconds = 0
                 elif p_status == "Bad":
                     self.bad_posture_time += elapsed_seconds
+                    self.current_bad_posture_seconds += elapsed_seconds
+                else:
+                    self.current_bad_posture_seconds = 0
                 if study_state == "Looking Away" or f_status == "Away":
                     self.away_time += elapsed_seconds
                 if study_state == "No Face":
                     self.no_face_time += elapsed_seconds
                 if study_state == "Drowsy":
                     self.drowsy_time += elapsed_seconds
+
+                if f_status == "Focused":
+                    self.current_focus_drop_seconds = 0
+                else:
+                    self.current_focus_drop_seconds += elapsed_seconds
+
+                if drowsy or study_state == "Drowsy":
+                    self.current_drowsy_seconds += elapsed_seconds
+                else:
+                    self.current_drowsy_seconds = 0
 
                 self.study_session.update(
                     elapsed_seconds,
@@ -233,6 +260,8 @@ class CameraWorker:
                     f_status,
                     study_state,
                 )
+
+                self._maybe_play_study_alert_sound(current_second)
 
             if current_time - last_log_time >= 1.0:
                 self._log_data(p_score, p_status, neck_angle, shoulder_slope, torso_lean,
@@ -290,6 +319,7 @@ class CameraWorker:
                     "gaze_zone": gaze_zone,
                     "feedback": self._posture_feedback(p_status, slouch_risk),
                     "focused_time": self.focused_time,
+                    "max_focused_time": session_snapshot["max_focused_streak_seconds"],
                     "good_posture_time": self.good_posture_time,
                     "bad_posture_time": self.bad_posture_time,
                     "away_time": self.away_time,
@@ -373,6 +403,7 @@ class CameraWorker:
                 report_file.write(f"Average posture score: {avg_p}\n")
                 report_file.write(f"Average focus score: {avg_f}\n")
                 report_file.write(f"Focused seconds: {int(self.focused_time)}\n")
+                report_file.write(f"Max focused streak seconds: {int(session_snapshot['max_focused_streak_seconds'])}\n")
                 report_file.write(f"Good posture seconds: {int(self.good_posture_time)}\n")
                 report_file.write(f"Bad posture seconds: {int(self.bad_posture_time)}\n")
                 report_file.write(f"Away seconds: {int(self.away_time)}\n")
@@ -389,6 +420,89 @@ class CameraWorker:
                 self.dashboard_queue.put({"camera_state": camera_state})
             except Exception as exc:
                 print(f"Dashboard status update error: {exc}")
+
+    def _maybe_play_study_alert_sound(self, current_second):
+        if self.current_drowsy_seconds >= config.DROWSY_SOUND_AFTER_SECONDS:
+            self._maybe_play_drowsy_sound(current_second)
+            return
+
+        if self.current_bad_posture_seconds >= config.BAD_POSTURE_SOUND_AFTER_SECONDS:
+            self._maybe_play_bad_posture_sound(current_second)
+            return
+
+        self._maybe_play_focus_drop_sound(current_second)
+
+    def _maybe_play_bad_posture_sound(self, current_second):
+        if not getattr(config, "ENABLE_BAD_POSTURE_SOUND", True):
+            return False
+        if self.current_bad_posture_seconds < config.BAD_POSTURE_SOUND_AFTER_SECONDS:
+            return False
+        if self.last_bad_posture_sound_second is not None:
+            elapsed_since_sound = current_second - self.last_bad_posture_sound_second
+            if elapsed_since_sound < config.BAD_POSTURE_SOUND_COOLDOWN_SECONDS:
+                return False
+
+        self.last_bad_posture_sound_second = current_second
+        self._play_alert_sound(config.BAD_POSTURE_SOUND_PATH)
+        return True
+
+    def _maybe_play_focus_drop_sound(self, current_second):
+        if not getattr(config, "ENABLE_FOCUS_DROP_SOUND", True):
+            return False
+        if self.current_focus_drop_seconds < config.FOCUS_DROP_SOUND_AFTER_SECONDS:
+            return False
+        if self.last_focus_drop_sound_second is not None:
+            elapsed_since_sound = current_second - self.last_focus_drop_sound_second
+            if elapsed_since_sound < config.FOCUS_DROP_SOUND_COOLDOWN_SECONDS:
+                return False
+
+        self.last_focus_drop_sound_second = current_second
+        self._play_alert_sound(config.FOCUS_DROP_SOUND_PATH)
+        return True
+
+    def _maybe_play_drowsy_sound(self, current_second):
+        if not getattr(config, "ENABLE_DROWSY_SOUND", True):
+            return False
+        if self.current_drowsy_seconds < config.DROWSY_SOUND_AFTER_SECONDS:
+            return False
+        if self.last_drowsy_sound_second is not None:
+            elapsed_since_sound = current_second - self.last_drowsy_sound_second
+            if elapsed_since_sound < config.DROWSY_SOUND_COOLDOWN_SECONDS:
+                return False
+
+        self.last_drowsy_sound_second = current_second
+        self._play_alert_sound(
+            config.DROWSY_SOUND_PATH,
+            repeat_count=config.DROWSY_SOUND_REPEAT_COUNT,
+            repeat_gap_seconds=config.DROWSY_SOUND_REPEAT_GAP_SECONDS,
+        )
+        return True
+
+    def _play_alert_sound(self, sound_path, repeat_count=1, repeat_gap_seconds=0.0):
+        if not sound_path or not os.path.exists(sound_path):
+            print(f"Alert sound not found: {sound_path}")
+            return
+
+        sound_thread = threading.Thread(
+            target=self._play_alert_sound_sequence,
+            args=(sound_path, max(1, int(repeat_count)), max(0.0, float(repeat_gap_seconds))),
+            daemon=True,
+        )
+        sound_thread.start()
+
+    def _play_alert_sound_sequence(self, sound_path, repeat_count, repeat_gap_seconds):
+        try:
+            for index in range(repeat_count):
+                subprocess.run(
+                    ["afplay", sound_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if index < repeat_count - 1 and repeat_gap_seconds > 0:
+                    time.sleep(repeat_gap_seconds)
+        except Exception as exc:
+            print(f"Could not play alert sound: {exc}")
 
     def _open_camera(self):
         backend = None

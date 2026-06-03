@@ -167,13 +167,32 @@ def run_dashboard(data_queue, command_queue=None):
         font=FONT_SECTION,
         text_color=COLORS["normal"],
     ).pack(side="left")
+
+    camera_view_enabled = ctk.BooleanVar(value=True)
+
+    def update_camera_view_state():
+        if not camera_view_enabled.get():
+            video_label.configure(image="", text="Camera view hidden")
+
+    camera_view_switch = ctk.CTkSwitch(
+        camera_header,
+        text="Camera View",
+        variable=camera_view_enabled,
+        command=update_camera_view_state,
+        progress_color=COLORS["primary_mint"],
+        button_color=COLORS["primary_mint"],
+        font=(FONT_FAMILY, 13, "bold"),
+        text_color=COLORS["text_sub"],
+    )
+    camera_view_switch.pack(side="right")
+
     camera_state = ctk.CTkLabel(
         camera_header,
         text="Waiting",
         font=FONT_BODY,
         text_color=COLORS["text_sub"],
     )
-    camera_state.pack(side="right")
+    camera_state.pack(side="right", padx=(0, 14))
 
     video_shell = ctk.CTkFrame(camera_card, fg_color="#F8FAFC", corner_radius=16)
     video_shell.pack(fill="both", expand=True, padx=18, pady=(0, 18))
@@ -223,7 +242,7 @@ def run_dashboard(data_queue, command_queue=None):
     focus_status.pack(anchor="w", padx=22)
     focus_detail = ctk.CTkLabel(
         focus_card,
-        text="Gaze: --   Focused: 00:00",
+        text="Gaze: --   Focused: 00:00   Best: 00:00",
         font=(FONT_FAMILY, 13),
         text_color=COLORS["text_sub"],
     )
@@ -323,9 +342,12 @@ def run_dashboard(data_queue, command_queue=None):
                 stats = data.get("stats", {})
 
                 if frame is not None:
-                    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=(800, 570))
-                    video_label.configure(image=latest_image["value"], text="")
+                    if camera_view_enabled.get():
+                        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                        latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=(800, 570))
+                        video_label.configure(image=latest_image["value"], text="")
+                    else:
+                        video_label.configure(image="", text="Camera view hidden")
                     camera_state.configure(text="Analyzing")
 
                 timer.configure(text=stats.get("time_str", "00:00:00"))
@@ -338,6 +360,7 @@ def run_dashboard(data_queue, command_queue=None):
                 current_focus_status = stats.get("focus_status", "Away")
                 current_gaze_zone = stats.get("gaze_zone", "--")
                 focused_time = stats.get("focused_time", 0)
+                max_focused_time = stats.get("max_focused_time", 0)
                 focus_text_color = _focus_color(current_focus_status)
                 current_study_state = stats.get("study_state", "Analyzing")
                 state_color = {
@@ -360,7 +383,13 @@ def run_dashboard(data_queue, command_queue=None):
                     }.get(current_focus_status, f"현재 상태: {current_focus_status}"),
                     text_color=focus_text_color,
                 )
-                focus_detail.configure(text=f"Gaze: {current_gaze_zone}   Focused: {_format_seconds(focused_time)}")
+                focus_detail.configure(
+                    text=(
+                        f"Gaze: {current_gaze_zone}"
+                        f"   Focused: {_format_seconds(focused_time)}"
+                        f"   Best: {_format_seconds(max_focused_time)}"
+                    )
+                )
                 study_state.configure(text=current_study_state, text_color=state_color)
                 study_detail.configure(
                     text=(

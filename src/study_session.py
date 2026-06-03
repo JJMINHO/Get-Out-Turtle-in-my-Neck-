@@ -16,6 +16,8 @@ class StudySession:
         self.ended_at = None
         self.duration_seconds = 0
         self.focused_seconds = 0
+        self.current_focused_streak_seconds = 0
+        self.max_focused_streak_seconds = 0
         self.good_posture_seconds = 0
         self.bad_posture_seconds = 0
         self.away_seconds = 0
@@ -34,6 +36,8 @@ class StudySession:
         self.ended_at = None
         self.duration_seconds = 0
         self.focused_seconds = 0
+        self.current_focused_streak_seconds = 0
+        self.max_focused_streak_seconds = 0
         self.good_posture_seconds = 0
         self.bad_posture_seconds = 0
         self.away_seconds = 0
@@ -61,6 +65,13 @@ class StudySession:
 
         if focus_status == "Focused":
             self.focused_seconds += safe_delta
+            self.current_focused_streak_seconds += safe_delta
+            self.max_focused_streak_seconds = max(
+                self.max_focused_streak_seconds,
+                self.current_focused_streak_seconds,
+            )
+        else:
+            self.current_focused_streak_seconds = 0
         if posture_status == "Good":
             self.good_posture_seconds += safe_delta
         elif posture_status == "Bad":
@@ -82,6 +93,8 @@ class StudySession:
             "avg_posture": avg_posture,
             "avg_focus": avg_focus,
             "focused_seconds": self.focused_seconds,
+            "current_focused_streak_seconds": self.current_focused_streak_seconds,
+            "max_focused_streak_seconds": self.max_focused_streak_seconds,
             "good_posture_seconds": self.good_posture_seconds,
             "bad_posture_seconds": self.bad_posture_seconds,
             "away_seconds": self.away_seconds,
@@ -133,25 +146,12 @@ class StudySession:
     def _ensure_csv(self):
         os.makedirs(os.path.dirname(config.DAILY_SESSIONS_CSV_PATH), exist_ok=True)
         if os.path.exists(config.DAILY_SESSIONS_CSV_PATH):
+            self._migrate_csv_if_needed()
             return
 
         with open(config.DAILY_SESSIONS_CSV_PATH, "w", newline="") as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow([
-                "date",
-                "start_time",
-                "end_time",
-                "duration_seconds",
-                "focused_seconds",
-                "good_posture_seconds",
-                "bad_posture_seconds",
-                "away_seconds",
-                "no_face_seconds",
-                "drowsy_seconds",
-                "avg_posture_score",
-                "avg_focus_score",
-                "dominant_state",
-            ])
+            writer.writerow(self._csv_header())
 
     def _write_summary(self, summary):
         if self.duration_seconds <= 0:
@@ -165,6 +165,7 @@ class StudySession:
                 self.ended_at.strftime("%Y-%m-%d %H:%M:%S"),
                 int(self.duration_seconds),
                 int(summary["focused_seconds"]),
+                int(summary["max_focused_streak_seconds"]),
                 int(summary["good_posture_seconds"]),
                 int(summary["bad_posture_seconds"]),
                 int(summary["away_seconds"]),
@@ -174,3 +175,47 @@ class StudySession:
                 round(summary["avg_focus"], 1),
                 summary["dominant_state"],
             ])
+
+    def _csv_header(self):
+        return [
+            "date",
+            "start_time",
+            "end_time",
+            "duration_seconds",
+            "focused_seconds",
+            "max_focused_streak_seconds",
+            "good_posture_seconds",
+            "bad_posture_seconds",
+            "away_seconds",
+            "no_face_seconds",
+            "drowsy_seconds",
+            "avg_posture_score",
+            "avg_focus_score",
+            "dominant_state",
+        ]
+
+    def _migrate_csv_if_needed(self):
+        with open(config.DAILY_SESSIONS_CSV_PATH, "r", newline="") as csv_file:
+            rows = list(csv.reader(csv_file))
+
+        if not rows:
+            return
+
+        header = rows[0]
+        if "max_focused_streak_seconds" in header:
+            return
+
+        try:
+            focused_index = header.index("focused_seconds")
+        except ValueError:
+            return
+
+        header.insert(focused_index + 1, "max_focused_streak_seconds")
+        migrated_rows = [header]
+        for row in rows[1:]:
+            row.insert(focused_index + 1, "0")
+            migrated_rows.append(row)
+
+        with open(config.DAILY_SESSIONS_CSV_PATH, "w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerows(migrated_rows)
