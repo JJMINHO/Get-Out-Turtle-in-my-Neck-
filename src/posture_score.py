@@ -60,7 +60,7 @@ class PostureScoreCalculator:
         """
         Calculates posture metrics and overall score.
         Returns score, status, head_offset, shoulder_slope, torso_offset,
-        face_ratio_delta, turtle_neck_risk, slouch_delta, slouch_risk.
+        face_ratio_delta, turtle_neck_risk, shoulder_drop_delta, slouch_risk.
         """
         if not pose_landmarks:
             return 0, "No Pose", 0, 0, 0, 0, "Unknown", 0, "Unknown"
@@ -136,6 +136,7 @@ class PostureScoreCalculator:
             face_ratio_delta = self._apply_noise_floor(face_ratio_delta)
             head_height_delta = self._apply_noise_floor(head_height_delta)
             turtle_neck_signal = max(face_ratio_delta, head_height_delta * 0.35)
+            # If the calibrated shoulder line moves downward, treat it as a lightweight slouch proxy.
             shoulder_drop_delta = shoulder_y - self.baseline_shoulder_y
             torso_height_drop_delta = self.baseline_torso_height_ratio - torso_height_ratio
             shoulder_drop_delta = self._apply_noise_floor(shoulder_drop_delta)
@@ -149,9 +150,17 @@ class PostureScoreCalculator:
             else:
                 turtle_neck_risk = "Low"
 
-            if slouch_signal >= config.SLOUCH_DROP_BAD or torso_height_drop_delta >= config.TORSO_HEIGHT_DROP_BAD:
+            if (
+                shoulder_drop_delta >= config.SHOULDER_DROP_BAD
+                or slouch_signal >= config.SLOUCH_DROP_BAD
+                or torso_height_drop_delta >= config.TORSO_HEIGHT_DROP_BAD
+            ):
                 slouch_risk = "High"
-            elif slouch_signal >= config.SLOUCH_DROP_WARNING or torso_height_drop_delta >= config.TORSO_HEIGHT_DROP_WARNING:
+            elif (
+                shoulder_drop_delta >= config.SHOULDER_DROP_WARNING
+                or slouch_signal >= config.SLOUCH_DROP_WARNING
+                or torso_height_drop_delta >= config.TORSO_HEIGHT_DROP_WARNING
+            ):
                 slouch_risk = "Medium"
             else:
                 slouch_risk = "Low"
@@ -173,6 +182,9 @@ class PostureScoreCalculator:
             if slouch_signal > config.SLOUCH_DROP_WARNING:
                 score -= (slouch_signal - config.SLOUCH_DROP_WARNING) * 260
 
+            if shoulder_drop_delta > config.SHOULDER_DROP_WARNING:
+                score -= (shoulder_drop_delta - config.SHOULDER_DROP_WARNING) * 360
+
             score = max(0, min(100, score))
             if turtle_neck_risk == "High" or slouch_risk == "High":
                 score = min(score, config.WARNING_THRESHOLD - 1)
@@ -190,7 +202,7 @@ class PostureScoreCalculator:
 
             return (
                 score, status, neck_angle, shoulder_slope, torso_lean,
-                face_ratio_delta, turtle_neck_risk, slouch_signal, slouch_risk
+                face_ratio_delta, turtle_neck_risk, shoulder_drop_delta, slouch_risk
             )
 
         except Exception as e:

@@ -99,8 +99,27 @@ class DeskPoseApp(rumps.App):
 
     def refresh_title(self, _sender):
         """Refresh the menu bar title from the app event loop."""
+        self.worker.handle_dashboard_commands()
+
+        if self.worker.show_dashboard and (
+            self.worker.dashboard_process is None or not self.worker.dashboard_process.is_alive()
+        ):
+            self.worker.show_dashboard = False
+            self.worker.dashboard_process = None
+            self.worker.dashboard_queue = None
+            self.worker.dashboard_command_queue = None
+
         self.debug_button.title = "Hide Debug Window" if self.worker.show_debug else "Show Debug Window"
         self.dashboard_button.title = "Hide Dashboard" if self.worker.show_dashboard else "Show Dashboard"
+
+        if not self.is_monitoring and self.worker.is_running:
+            self.is_monitoring = True
+            self.start_stop_button.title = "Stop Monitoring"
+
+        if self.is_monitoring and not self.worker.is_running:
+            self.is_monitoring = False
+            self.start_stop_button.title = "Start Monitoring"
+            self.title = "DeskPose (Off)"
 
         if not self.is_monitoring:
             self.status_item.title = "Status: Idle"
@@ -138,5 +157,6 @@ class DeskPoseApp(rumps.App):
         self.debug_timer.stop()
         if self.worker:
             self.worker.stop()
+            self.worker.set_dashboard(False)
             self.worker.close_debug_window()
         super().quit(sender)

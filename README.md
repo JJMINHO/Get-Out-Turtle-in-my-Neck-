@@ -38,8 +38,9 @@
 - blink / long eye closure 기반 drowsy signal
 - 자세 점수 및 집중도 점수 계산
 - study state event segmentation
+- 일일 공부 세션 기록 및 누적 공부 시간 표시
 - macOS 메뉴바 상태 표시
-- CSV 로그 및 세션 이벤트 저장
+- CSV 로그, 세션 이벤트, 일일 공부 기록 저장
 - 디버그 창을 통한 landmark 시각화
 
 ---
@@ -77,6 +78,7 @@ deskpose-coach/
 │   ├── distance_analyzer.py
 │   ├── focus_score.py
 │   ├── study_event_segmenter.py
+│   ├── study_session.py
 │   ├── session_summary.py
 │   └── config.py
 ├── outputs/
@@ -199,6 +201,14 @@ Distracted
 ```text
 outputs/study_events.csv
 ```
+
+공부 세션을 종료하면 하루 단위 요약이 다음 파일에 저장됩니다.
+
+```text
+outputs/daily_sessions.csv
+```
+
+기록되는 항목은 세션 시작/종료 시간, 총 공부 시간, focused 시간, 좋은 자세/나쁜 자세 시간, 화면 이탈/얼굴 미감지 시간, 평균 posture/focus score입니다.
 
 메뉴바의 `Show Session Summary`를 누르면 현재까지의 평균 posture/focus score와 주요 event 시간을 요약해서 확인할 수 있습니다.
 

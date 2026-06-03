@@ -897,3 +897,462 @@ The project should be described as a computer vision term project, not as a medi
 6. 결과를 발표에서 시각적으로 설명할 수 있는가?
 
 MVP를 망가뜨릴 정도로 복잡한 기능은 추가하지 마세요.
+
+
+# AGENTS.md
+
+## Project Goal
+
+This project is a **Forward Head Posture Analyzer** that uses computer vision to measure neck posture in real time.
+
+The current UI works functionally, but it looks unfinished and visually rough.
+Your task is to redesign the UI into a clean, polished **healthcare app-style dashboard**.
+
+The target style is:
+
+> Bright background, white rounded cards, mint/blue accent colors, clean typography, and simple visual hierarchy.
+
+The final UI should feel like a modern posture-care or digital healthcare application, not a basic OpenCV demo.
+
+---
+
+## Design Direction
+
+Use the following visual style.
+
+### Overall Mood
+
+* Clean
+* Modern
+* Healthcare-oriented
+* Calm and trustworthy
+* App-like
+* Presentation-ready
+
+Avoid:
+
+* Default-looking widgets
+* Harsh colors
+* Too many borders
+* Crowded layout
+* Small unreadable text
+* Experimental debug UI feeling
+
+---
+
+## Color Palette
+
+Use a consistent healthcare-style color palette.
+
+```text
+Background      #F4FAF9
+Card            #FFFFFF
+Primary Mint    #2DD4BF
+Primary Blue    #3B82F6
+Text Main       #111827
+Text Sub        #6B7280
+Border          #E5E7EB
+
+Normal          #10B981
+Caution         #F59E0B
+Danger          #EF4444
+```
+
+Rules:
+
+* Use the light mint/gray background for the main window.
+* Use white cards for content sections.
+* Use mint as the primary accent color.
+* Use blue only as a secondary accent.
+* Use green, orange, and red only for posture risk status.
+* Do not overuse saturated colors.
+
+---
+
+## Typography
+
+Use clean Korean/English-friendly fonts.
+
+Preferred fonts:
+
+```text
+1. Pretendard
+2. Noto Sans KR
+3. Apple SD Gothic Neo
+4. Inter
+```
+
+If custom fonts are difficult to load, use the best available system font.
+
+Recommended font sizes:
+
+```text
+Main title:       24-28px
+Subtitle:         13-15px
+Section title:    15-18px
+Body text:        13-15px
+Metric number:    32-48px
+Button text:      14-16px
+```
+
+Metric values such as posture score and neck angle must be large and immediately readable.
+
+---
+
+## Target Layout
+
+Redesign the main screen into this structure:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ NeckCare Vision                                               │
+│ Real-time Forward Head Posture Analyzer                       │
+├───────────────────────────────────────┬──────────────────────┤
+│                                       │ Posture Score         │
+│                                       │ 72 / 100              │
+│            Live Camera                │ ● Caution             │
+│                                       ├──────────────────────┤
+│      Skeleton / Keypoints Overlay     │ Neck Angle            │
+│                                       │ 18.2°                 │
+│                                       │ Forward Head Angle    │
+│                                       ├──────────────────────┤
+│                                       │ Feedback              │
+│                                       │ 턱을 살짝 당기고      │
+│                                       │ 귀와 어깨를 맞춰주세요 │
+├───────────────────────────────────────┴──────────────────────┤
+│ [ Start Analysis ]   [ Stop Camera ]   [ Save Report ]        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The UI should have three main areas:
+
+1. Header
+2. Main content area
+
+   * Left: live camera preview
+   * Right: posture result cards
+3. Bottom control buttons
+
+---
+
+## Header Requirements
+
+The header should include:
+
+```text
+NeckCare Vision
+Real-time Forward Head Posture Analyzer
+```
+
+Design rules:
+
+* Title should be large and bold.
+* Subtitle should be smaller and gray.
+* Add enough vertical padding.
+* Do not make the header too tall.
+
+---
+
+## Camera Preview Area
+
+The camera area should be the largest visual element.
+
+Requirements:
+
+* Use a white card or rounded container.
+* Add a small label at the top-left:
+
+```text
+● Live Camera
+```
+
+* The live indicator dot may use green or mint.
+* The camera frame should not look like a raw debug window.
+* If skeleton, keypoints, or angle lines are drawn, keep them minimal and readable.
+* Overlay only essential information:
+
+  * keypoints
+  * neck angle line
+  * shoulder reference line
+  * current angle text
+
+Avoid excessive debug text inside the camera preview.
+
+---
+
+## Right-side Result Panel
+
+Create three stacked result cards.
+
+### Card 1: Posture Score
+
+Content:
+
+```text
+Posture Score
+72 / 100
+● Caution
+```
+
+Rules:
+
+* Score should be the largest text in this card.
+* Risk status should be displayed as a small badge.
+* Badge color:
+
+  * Normal: green
+  * Caution: orange
+  * Danger: red
+
+### Card 2: Neck Angle
+
+Content:
+
+```text
+Neck Angle
+18.2°
+Forward Head Angle
+```
+
+Rules:
+
+* Angle value should be large.
+* Degree symbol must be displayed.
+* The label should be clear and not overly technical.
+
+### Card 3: Feedback
+
+Content examples:
+
+```text
+Feedback
+턱을 살짝 당기고 귀와 어깨를 맞춰주세요.
+```
+
+or
+
+```text
+Feedback
+현재 자세가 안정적입니다. 이 자세를 유지하세요.
+```
+
+Rules:
+
+* Feedback should be short and useful.
+* Use Korean feedback text if the rest of the app is Korean.
+* Do not display long paragraphs.
+
+---
+
+## Button Design
+
+Create three main buttons:
+
+```text
+Start Analysis
+Stop Camera
+Save Report
+```
+
+Style rules:
+
+### Start Analysis
+
+* Filled mint button
+* Highest visual priority
+* Rounded corners
+* White text
+
+### Stop Camera
+
+* Light gray or outline button
+* Lower visual priority
+
+### Save Report
+
+* Blue outline or subtle blue button
+* Medium visual priority
+
+Button requirements:
+
+```text
+Height:        40-48px
+Border radius: 12-16px
+Font size:     14-16px
+```
+
+Buttons should have consistent spacing and alignment.
+
+---
+
+## Component Styling Rules
+
+Use rounded cards.
+
+Recommended values:
+
+```text
+Card border radius: 16-20px
+Card padding:       16-24px
+Card gap:           12-20px
+Outer margin:       20-32px
+```
+
+Cards should have either:
+
+* very subtle border, or
+* very subtle shadow
+
+Do not use heavy shadows.
+
+---
+
+## Functional Requirements
+
+Do not break existing computer vision logic.
+
+Preserve the existing behavior:
+
+* Camera start
+* Camera stop
+* Real-time frame update
+* Posture angle calculation
+* Score calculation
+* Risk status update
+* Result saving, if already implemented
+
+The UI refactor should primarily improve presentation and layout.
+
+If the current code mixes UI logic and computer vision logic too heavily, refactor carefully:
+
+* Keep camera processing logic separate.
+* Keep posture calculation logic separate.
+* Keep UI rendering logic separate.
+
+Do not rewrite the entire project unnecessarily.
+
+---
+
+## Framework Rule
+
+Use the GUI framework already used in the project unless there is a strong reason to change it.
+
+If the current project uses basic `tkinter`, it is acceptable to improve the UI using:
+
+```text
+customtkinter
+```
+
+However:
+
+* Do not introduce unnecessary heavy dependencies.
+* Do not change the project structure more than needed.
+* Make sure the app still runs with a simple command.
+
+---
+
+## Status Logic
+
+Use the following status mapping unless the project already defines a better one:
+
+```text
+Normal:   angle < 10°
+Caution:  10° <= angle < 20°
+Danger:   angle >= 20°
+```
+
+Status display:
+
+```text
+Normal  → green badge
+Caution → orange badge
+Danger  → red badge
+```
+
+The status badge should be visually clear but not oversized.
+
+---
+
+## Example Feedback Messages
+
+Use short feedback messages based on status.
+
+### Normal
+
+```text
+현재 자세가 안정적입니다. 이 자세를 유지하세요.
+```
+
+### Caution
+
+```text
+목이 약간 앞으로 나와 있습니다. 턱을 살짝 당겨주세요.
+```
+
+### Danger
+
+```text
+거북목 위험도가 높습니다. 귀와 어깨가 일직선이 되도록 자세를 조정하세요.
+```
+
+---
+
+## Responsiveness
+
+The UI does not need to be fully responsive like a web app, but it should handle reasonable window sizes.
+
+Minimum target window size:
+
+```text
+1200 x 720
+```
+
+The layout should not collapse or overlap at this size.
+
+---
+
+## Output Expectations
+
+After completing the UI refactor:
+
+1. The app should run without errors.
+2. Existing posture analysis functionality should still work.
+3. The UI should look polished enough for a term project presentation.
+4. The main screen should clearly show:
+
+   * live camera
+   * posture score
+   * neck angle
+   * risk status
+   * feedback
+   * control buttons
+
+---
+
+## Do Not Do
+
+Do not:
+
+* Add unnecessary new features.
+* Add login/signup screens.
+* Add complex animations.
+* Add excessive charts.
+* Use too many colors.
+* Display raw debug logs in the main UI.
+* Break the existing camera pipeline.
+* Rewrite working computer vision code unless necessary.
+
+---
+
+## Final Quality Bar
+
+The final result should look like a simple but polished healthcare dashboard.
+
+A user should immediately understand:
+
+1. whether the camera is running,
+2. what their current neck angle is,
+3. whether their posture is normal, caution, or danger,
+4. what action they should take.
+
+The UI should feel clean, calm, and trustworthy.

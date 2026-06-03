@@ -19,6 +19,7 @@ from src.head_pose_analyzer import HeadPoseAnalyzer
 from src.pose_analyzer import PoseAnalyzer
 from src.posture_score import PostureScoreCalculator
 from src.study_event_segmenter import StudyEventSegmenter
+from src.study_session import StudySession
 
 
 class CameraWorker:
@@ -32,15 +33,19 @@ class CameraWorker:
         self.show_dashboard = False
         self.dashboard_process = None
         self.dashboard_queue = None
+        self.dashboard_command_queue = None
 
         self.session_start_time = None
         self.focused_time = 0.0
         self.good_posture_time = 0.0
         self.bad_posture_time = 0.0
+        self.away_time = 0.0
+        self.no_face_time = 0.0
+        self.drowsy_time = 0.0
         self.score_sum_p = 0.0
         self.score_sum_f = 0.0
         self.score_count = 0
-        self.last_frame_time = None
+        self.last_counted_second = None
         self.thread = None
         self.ui_callback = ui_callback
 
@@ -53,6 +58,7 @@ class CameraWorker:
         self.posture_calculator = PostureScoreCalculator()
         self.focus_calculator = FocusScoreCalculator()
         self.study_event_segmenter = StudyEventSegmenter()
+        self.study_session = StudySession()
 
         os.makedirs(os.path.dirname(config.CSV_LOG_PATH), exist_ok=True)
         if not os.path.exists(config.CSV_LOG_PATH):
@@ -61,7 +67,7 @@ class CameraWorker:
                 writer.writerow([
                     "timestamp", "posture_score", "posture_status",
                     "head_offset_ratio", "shoulder_slope", "torso_offset_ratio",
-                    "face_shoulder_delta", "turtle_neck_risk", "slouch_delta", "slouch_risk",
+                    "face_shoulder_delta", "turtle_neck_risk", "shoulder_drop_delta", "slouch_risk",
                     "focus_score", "focus_status", "face_detected",
                     "gaze_zone", "head_yaw", "head_pitch", "eye_x", "eye_y",
                     "head_roll", "head_state", "eye_aspect_ratio", "eye_state",
@@ -73,14 +79,19 @@ class CameraWorker:
         if not self.is_running:
             self.posture_calculator.reset_calibration()
             self.eye_analyzer.reset()
-            self.session_start_time = time.time()
-            self.focused_time = 0.0
-            self.good_posture_time = 0.0
-            self.bad_posture_time = 0.0
+            self.session_start_time = int(time.time())
+            self.focused_time = 0
+            self.good_posture_time = 0
+            self.bad_posture_time = 0
+            self.away_time = 0
+            self.no_face_time = 0
+            self.drowsy_time = 0
             self.score_sum_p = 0.0
             self.score_sum_f = 0.0
             self.score_count = 0
-            self.last_frame_time = time.time()
+            self.last_counted_second = self.session_start_time
+            self.study_event_segmenter = StudyEventSegmenter()
+            self.study_session.start()
             self.is_running = True
             self.thread = threading.Thread(target=self._run_loop, daemon=True)
             self.thread.start()
@@ -90,7 +101,6 @@ class CameraWorker:
         if self.thread:
             self.thread.join(timeout=2.0)
             self.thread = None
-        self.set_dashboard(False)
 
     def set_debug(self, state):
         self.show_debug = state
@@ -109,7 +119,11 @@ class CameraWorker:
             if self.dashboard_process is None or not self.dashboard_process.is_alive():
                 from src.dashboard_ui import run_dashboard
                 self.dashboard_queue = multiprocessing.Queue()
-                self.dashboard_process = multiprocessing.Process(target=run_dashboard, args=(self.dashboard_queue,))
+                self.dashboard_command_queue = multiprocessing.Queue()
+                self.dashboard_process = multiprocessing.Process(
+                    target=run_dashboard,
+                    args=(self.dashboard_queue, self.dashboard_command_queue),
+                )
                 self.dashboard_process.start()
         else:
             print("Dashboard window disabled.")
@@ -119,6 +133,7 @@ class CameraWorker:
                 self.dashboard_process.join(timeout=2)
             self.dashboard_process = None
             self.dashboard_queue = None
+            self.dashboard_command_queue = None
 
     def reset_calibration(self):
         self.posture_calculator.reset_calibration()
@@ -129,6 +144,7 @@ class CameraWorker:
         cap = self._open_camera()
         if cap is None:
             self.is_running = False
+            self._send_dashboard_status("Camera unavailable")
             return
 
         last_log_time = 0
@@ -185,21 +201,38 @@ class CameraWorker:
                 self.ui_callback(p_score, p_status, f_score, f_status)
 
             current_time = time.time()
-            if self.last_frame_time is None:
-                self.last_frame_time = current_time
-            delta_time = current_time - self.last_frame_time
-            self.last_frame_time = current_time
+            current_second = int(current_time)
+            if self.last_counted_second is None:
+                self.last_counted_second = current_second
+            elapsed_seconds = max(0, current_second - self.last_counted_second)
+            self.last_counted_second = current_second
 
             self.score_sum_p += p_score
             self.score_sum_f += f_score
             self.score_count += 1
 
-            if f_status == "Focused":
-                self.focused_time += delta_time
-            if p_status == "Good":
-                self.good_posture_time += delta_time
-            elif p_status == "Bad":
-                self.bad_posture_time += delta_time
+            if elapsed_seconds > 0:
+                if f_status == "Focused":
+                    self.focused_time += elapsed_seconds
+                if p_status == "Good":
+                    self.good_posture_time += elapsed_seconds
+                elif p_status == "Bad":
+                    self.bad_posture_time += elapsed_seconds
+                if study_state == "Looking Away" or f_status == "Away":
+                    self.away_time += elapsed_seconds
+                if study_state == "No Face":
+                    self.no_face_time += elapsed_seconds
+                if study_state == "Drowsy":
+                    self.drowsy_time += elapsed_seconds
+
+                self.study_session.update(
+                    elapsed_seconds,
+                    p_score,
+                    p_status,
+                    f_score,
+                    f_status,
+                    study_state,
+                )
 
             if current_time - last_log_time >= 1.0:
                 self._log_data(p_score, p_status, neck_angle, shoulder_slope, torso_lean,
@@ -230,8 +263,11 @@ class CameraWorker:
                 with self.debug_frame_lock:
                     self.latest_debug_frame = None
 
+            self._handle_dashboard_commands()
+
             if self.show_dashboard and self.dashboard_queue is not None:
-                session_time = current_time - self.session_start_time if self.session_start_time else 0.0
+                session_snapshot = self.study_session.snapshot()
+                session_time = session_snapshot["session_seconds"]
                 m, s = divmod(int(session_time), 60)
                 h, m = divmod(m, 60)
                 time_str = f"{h:02d}:{m:02d}:{s:02d}"
@@ -241,13 +277,28 @@ class CameraWorker:
 
                 stats = {
                     "time_str": time_str,
+                    "today_time": session_snapshot["today_seconds"],
                     "avg_p": avg_p,
                     "avg_f": avg_f,
+                    "posture_score": int(p_score),
+                    "posture_status": p_status,
+                    "neck_angle": float(neck_angle),
+                    "shoulder_drop": float(slouch_delta),
+                    "slouch_risk": slouch_risk,
+                    "focus_score": int(f_score),
+                    "focus_status": f_status,
+                    "gaze_zone": gaze_zone,
+                    "feedback": self._posture_feedback(p_status, slouch_risk),
                     "focused_time": self.focused_time,
                     "good_posture_time": self.good_posture_time,
-                    "bad_posture_time": self.bad_posture_time
+                    "bad_posture_time": self.bad_posture_time,
+                    "away_time": self.away_time,
+                    "no_face_time": self.no_face_time,
+                    "drowsy_time": self.drowsy_time,
+                    "study_state": study_state,
+                    "dominant_state": session_snapshot["dominant_state"],
                 }
-                
+
                 try:
                     while not self.dashboard_queue.empty():
                         try:
@@ -262,7 +313,82 @@ class CameraWorker:
 
         cap.release()
         self.study_event_segmenter.close()
+        self.study_session.finalize()
+        self._send_dashboard_status("Stopped")
         cv2.destroyAllWindows()
+
+    def _handle_dashboard_commands(self):
+        if self.dashboard_command_queue is None:
+            return
+
+        while not self.dashboard_command_queue.empty():
+            command = self.dashboard_command_queue.get_nowait()
+            if command == "START_ANALYSIS":
+                if self.is_running:
+                    self.reset_calibration()
+                else:
+                    self.start()
+            elif command == "SAVE_REPORT":
+                self._save_session_report()
+            elif command == "STOP_CAMERA":
+                self.is_running = False
+            elif command == "DASHBOARD_CLOSED":
+                self.show_dashboard = False
+                self.dashboard_process = None
+                self.dashboard_queue = None
+                self.dashboard_command_queue = None
+                break
+
+    def handle_dashboard_commands(self):
+        self._handle_dashboard_commands()
+
+    def _posture_feedback(self, posture_status, slouch_risk="Low"):
+        if str(posture_status).startswith("Calibrating"):
+            return "정자세를 유지하며 기준 자세를 측정하고 있습니다."
+        if slouch_risk == "High":
+            return "어깨선이 기준보다 많이 낮아졌습니다. 허리를 세우고 가슴을 살짝 펴주세요."
+        if slouch_risk == "Medium":
+            return "어깨가 조금 내려갔습니다. 허리를 곧게 세워주세요."
+        if posture_status == "Good":
+            return "현재 자세가 안정적입니다. 이 자세를 유지하세요."
+        if posture_status == "Warning":
+            return "목이 약간 앞으로 나와 있습니다. 턱을 살짝 당겨주세요."
+        if posture_status == "No Pose":
+            return "상체가 카메라에 보이도록 앉아주세요."
+        return "거북목 위험도가 높습니다. 귀와 어깨가 일직선이 되도록 자세를 조정하세요."
+
+    def _save_session_report(self):
+        try:
+            os.makedirs("outputs", exist_ok=True)
+            report_path = os.path.join("outputs", "session_report.txt")
+            session_time = self.study_session.snapshot()["session_seconds"]
+            avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
+            avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
+            session_snapshot = self.study_session.snapshot()
+            with open(report_path, "w", encoding="utf-8") as report_file:
+                report_file.write("NeckCare Vision Session Report\n")
+                report_file.write(f"Saved at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                report_file.write(f"Session seconds: {int(session_time)}\n")
+                report_file.write(f"Today total seconds: {int(session_snapshot['today_seconds'])}\n")
+                report_file.write(f"Average posture score: {avg_p}\n")
+                report_file.write(f"Average focus score: {avg_f}\n")
+                report_file.write(f"Focused seconds: {int(self.focused_time)}\n")
+                report_file.write(f"Good posture seconds: {int(self.good_posture_time)}\n")
+                report_file.write(f"Bad posture seconds: {int(self.bad_posture_time)}\n")
+                report_file.write(f"Away seconds: {int(self.away_time)}\n")
+                report_file.write(f"No face seconds: {int(self.no_face_time)}\n")
+                report_file.write(f"Drowsy signal seconds: {int(self.drowsy_time)}\n")
+                report_file.write(f"Dominant study state: {session_snapshot['dominant_state']}\n")
+            print(f"Session report saved: {report_path}")
+        except Exception as exc:
+            print(f"Error saving session report: {exc}")
+
+    def _send_dashboard_status(self, camera_state):
+        if self.show_dashboard and self.dashboard_queue is not None:
+            try:
+                self.dashboard_queue.put({"camera_state": camera_state})
+            except Exception as exc:
+                print(f"Dashboard status update error: {exc}")
 
     def _open_camera(self):
         backend = None
@@ -384,7 +510,7 @@ class CameraWorker:
         y = self._draw_metric_row(panel, "Head offset", neck_angle, "%", y)
         y = self._draw_metric_row(panel, "Face ratio +", face_shoulder_delta, "", y)
         y = self._draw_metric_row(panel, "Turtle risk", turtle_neck_risk, "", y)
-        y = self._draw_metric_row(panel, "Slouch +", slouch_delta, "", y)
+        y = self._draw_metric_row(panel, "Shoulder drop", slouch_delta, "", y)
         y = self._draw_metric_row(panel, "Slouch risk", slouch_risk, "", y)
 
         y += 12

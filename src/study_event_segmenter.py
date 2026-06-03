@@ -72,7 +72,7 @@ class StudyEventSegmenter:
     def _finish_event(self, ended_at, force=False):
         duration = (ended_at - self.current_started_at).total_seconds()
         if duration >= config.STUDY_EVENT_MIN_DURATION_SECONDS or force:
-            self._write_event(ended_at, duration)
+            self._write_event(ended_at, int(duration))
             self.last_committed_state = self.current_state
 
     def _write_event(self, ended_at, duration):
@@ -87,7 +87,7 @@ class StudyEventSegmenter:
                 self.current_started_at.strftime("%Y-%m-%d %H:%M:%S"),
                 ended_at.strftime("%Y-%m-%d %H:%M:%S"),
                 self.current_state,
-                round(duration, 1),
+                int(duration),
                 round(avg_posture_score, 1),
                 round(avg_focus_score, 1),
             ])
