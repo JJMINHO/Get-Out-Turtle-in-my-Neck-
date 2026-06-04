@@ -16,7 +16,7 @@ class DailyScoreCalculator:
     def __init__(self, target_study_seconds=None):
         self.target_study_seconds = int(
             target_study_seconds
-            or getattr(config, "DAILY_TARGET_STUDY_SECONDS", DEFAULT_TARGET_STUDY_SECONDS)
+            or (getattr(config, "TARGET_STUDY_TIME_HOURS", 4.0) * 3600)
         )
 
     def calculate(self, day=None, current_stats=None):

@@ -156,7 +156,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     def add_metric_bar(parent, label, value, color, max_value=1.0):
         row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=(0, 12))
+        row.pack(fill="x", padx=22, pady=(0, 12))
         ctk.CTkLabel(
             row,
             text=label,
@@ -207,8 +207,18 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         ).pack(anchor="w", padx=14, pady=(4, 12))
 
     def add_timeline_summary(parent, report, state_colors):
+        STATE_NAMES_KO = {
+            "Focused": "집중",
+            "Reading": "읽기",
+            "Bad Posture": "자세 불량",
+            "Looking Away": "시선 이탈",
+            "No Face": "자리 비움",
+            "Drowsy": "졸음 감지",
+            "Distracted": "주의 산만",
+            "Analyzing": "분석 중",
+        }
         durations = report["event_durations"]
-        bar = ctk.CTkFrame(parent, fg_color="#E5E7EB", height=20, corner_radius=10)
+        bar = ctk.CTkFrame(parent, fg_color="#E5E7EB", height=24, corner_radius=12)
         bar.pack(fill="x", padx=18, pady=(0, 12))
         bar.pack_propagate(False)
 
@@ -220,7 +230,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             segment = ctk.CTkFrame(
                 bar,
                 fg_color=state_colors.get(event_type, COLORS["text_sub"]),
-                corner_radius=8,
+                corner_radius=10,
             )
             segment.place(relx=offset, rely=0, relwidth=min(ratio, 1.0 - offset), relheight=1)
             offset = min(1.0, offset + ratio)
@@ -230,9 +240,10 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         legend = ctk.CTkFrame(parent, fg_color="transparent")
         legend.pack(fill="x", padx=18, pady=(0, 10))
         for event_type, duration in sorted(durations.items(), key=lambda item: item[1], reverse=True)[:5]:
+            ko_name = STATE_NAMES_KO.get(event_type, event_type)
             item = ctk.CTkLabel(
                 legend,
-                text=f"{event_type} {_format_seconds(duration)}",
+                text=f"{ko_name} ({_format_seconds(duration)})",
                 font=(FONT_FAMILY, 12, "bold"),
                 text_color=state_colors.get(event_type, COLORS["text_sub"]),
             )
@@ -242,7 +253,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         report = current_daily_score()
 
         window = ctk.CTkToplevel(app)
-        window.title("Daily Vision Report")
+        window.title("일일 학습 리포트")
         window.geometry("960x720")
         window.minsize(860, 620)
         window.configure(fg_color=COLORS["background"])
@@ -256,7 +267,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         header_row.pack(fill="x", pady=(0, 18))
         ctk.CTkLabel(
             header_row,
-            text="Daily Vision Report",
+            text="일일 학습 비전 리포트",
             font=(FONT_FAMILY, 26, "bold"),
             text_color=COLORS["text_main"],
         ).pack(side="left")
@@ -277,7 +288,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         score_card = _create_card(top, side="left", fill="both", expand=True, padx=(0, 14))
         ctk.CTkLabel(
             score_card,
-            text="Daily Study Score",
+            text="일일 학습 점수",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 0))
@@ -294,7 +305,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         parts_card = _create_card(top, side="left", fill="both", expand=True)
         ctk.CTkLabel(
             parts_card,
-            text="Score Parts",
+            text="상세 점수 구성",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 12))
@@ -306,7 +317,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         middle.pack(fill="x", pady=(0, 16))
 
         ratio_card = _create_card(middle, side="left", fill="both", expand=True, padx=(0, 14))
-        ctk.CTkLabel(ratio_card, text="Daily Metrics", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+        ctk.CTkLabel(ratio_card, text="오늘의 일일 지표", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
             anchor="w", padx=22, pady=(20, 12)
         )
         add_metric_bar(ratio_card, "집중 비율", report["focus_density"], COLORS["primary_mint"])
@@ -317,7 +328,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         quadrant_card = _create_card(middle, side="left", fill="both", expand=True)
         ctk.CTkLabel(
             quadrant_card,
-            text="Focus x Posture Quadrant",
+            text="집중도 x 자세 사분면",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 12))
@@ -333,8 +344,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             quadrant_grid,
             0,
             0,
-            "Strong",
-            "Focus high / Posture high",
+            "최상의 상태",
+            "집중도 높음 / 자세 바름",
             quadrants["strong"],
             COLORS["normal"],
             dominant_quadrant == "strong",
@@ -343,8 +354,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             quadrant_grid,
             0,
             1,
-            "Posture Risk",
-            "Focus high / Posture low",
+            "자세 위험",
+            "집중도 높음 / 자세 구부정",
             quadrants["posture_risk"],
             COLORS["caution"],
             dominant_quadrant == "posture_risk",
@@ -353,8 +364,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             quadrant_grid,
             1,
             0,
-            "Focus Risk",
-            "Focus low / Posture high",
+            "집중도 위험",
+            "집중도 낮음 / 자세 바름",
             quadrants["focus_risk"],
             COLORS["primary_blue"],
             dominant_quadrant == "focus_risk",
@@ -363,8 +374,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             quadrant_grid,
             1,
             1,
-            "Low Quality",
-            "Focus low / Posture low",
+            "이탈 및 휴식",
+            "집중도 낮음 / 자세 구부정",
             quadrants["low_quality"],
             COLORS["danger"],
             dominant_quadrant == "low_quality",
@@ -373,7 +384,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         timeline_card = _create_card(shell, fill="both", expand=True)
         ctk.CTkLabel(
             timeline_card,
-            text="Study State Timeline",
+            text="스터디 상태 타임라인",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(18, 10))
@@ -398,14 +409,25 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 font=FONT_BODY,
                 text_color=COLORS["text_sub"],
             ).pack(anchor="w", padx=14, pady=14)
+        STATE_NAMES_KO = {
+            "Focused": "집중",
+            "Reading": "읽기",
+            "Bad Posture": "자세 불량",
+            "Looking Away": "시선 이탈",
+            "No Face": "자리 비움",
+            "Drowsy": "졸음 감지",
+            "Distracted": "주의 산만",
+            "Analyzing": "분석 중",
+        }
         for event in report["events"]:
             color = state_colors.get(event["event_type"], COLORS["text_sub"])
             row = ctk.CTkFrame(timeline, fg_color="#FFFFFF", corner_radius=10)
             row.pack(fill="x", padx=10, pady=(10, 0))
             ctk.CTkLabel(row, text=" ", width=8, fg_color=color, corner_radius=4).pack(side="left", fill="y")
+            ko_name = STATE_NAMES_KO.get(event["event_type"], event["event_type"])
             text = (
-                f"{event['start_time'][-8:]} - {event['end_time'][-8:]}  "
-                f"{event['event_type']}  {_format_seconds(event['duration'])}"
+                f"{event['start_time'][-8:]} - {event['end_time'][-8:]}  │  "
+                f"{ko_name}  ({_format_seconds(event['duration'])})"
             )
             ctk.CTkLabel(
                 row,
@@ -1054,7 +1076,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                     if len(events) > 2:
                         ctk.CTkLabel(
                             cell,
-                            text=f"+{len(events) - 2} more",
+                            text=f"+ {len(events) - 2}개 더",
                             font=(FONT_FAMILY, 11, "bold"),
                             text_color=COLORS["text_sub"],
                         ).pack(anchor="w", padx=10, pady=(2, 0))
@@ -1172,7 +1194,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             return
 
         if not camera_view_enabled.get():
-            video_label.configure(image="", text="Camera view hidden")
+            video_label.configure(image=None, text="Camera view hidden")
             camera_card.pack_forget()
             side_panel.pack_forget()
             side_panel.configure(width=560)
@@ -1289,7 +1311,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_score_card = _create_card(side_panel, fill="x", pady=(0, 14))
     ctk.CTkLabel(
         daily_score_card,
-        text="Daily Study Score",
+        text="일일 학습 점수",
         font=FONT_SECTION,
         text_color=COLORS["text_sub"],
     ).pack(anchor="w", padx=22, pady=(18, 0))
@@ -1302,7 +1324,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_score_value.pack(anchor="w", padx=22, pady=(4, 4))
     daily_score_detail = ctk.CTkLabel(
         daily_score_card,
-        text="Focus --  Time --  Vision --",
+        text="집중 --  학습량 --  자세 --",
         font=(FONT_FAMILY, 12, "bold"),
         text_color=COLORS["text_sub"],
     )
@@ -1387,7 +1409,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                         latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=(800, 570))
                         video_label.configure(image=latest_image["value"], text="")
                     else:
-                        video_label.configure(image="", text="Camera view hidden")
+                        video_label.configure(image=None, text="Camera view hidden")
                     camera_state.configure(text="Analyzing")
 
                 timer.configure(text=stats.get("time_str", "00:00:00"))
@@ -1407,9 +1429,9 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 )
                 daily_score_detail.configure(
                     text=(
-                        f"Focus {daily_report['focus_part']:.1f}"
-                        f"  Time {daily_report['time_part']:.1f}"
-                        f"  Vision {daily_report['quality_part']:.1f}"
+                        f"집중 {daily_report['focus_part']:.1f}"
+                        f"  학습량 {daily_report['time_part']:.1f}"
+                        f"  자세 {daily_report['quality_part']:.1f}"
                     )
                 )
                 is_studying["value"] = bool(stats.get("is_running", True))
