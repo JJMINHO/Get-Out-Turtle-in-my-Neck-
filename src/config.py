@@ -1,6 +1,26 @@
 import os
 
+def load_dotenv():
+    dotenv_path = ".env"
+    if os.path.exists(dotenv_path):
+        try:
+            with open(dotenv_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        key = key.strip()
+                        val = val.strip().strip('"').strip("'")
+                        os.environ[key] = val
+        except Exception as e:
+            print(f"Error loading .env: {e}")
+
+load_dotenv()
+
 # Configuration values used across the DeskPose Coach application.
+
 
 CAMERA_INDEX = 0
 # Try these indices if CAMERA_INDEX fails.
@@ -56,7 +76,17 @@ HEAD_ROLL_TILT_THRESHOLD = 15
 CSV_LOG_PATH = "outputs/posture_focus_log.csv"
 STUDY_EVENTS_CSV_PATH = "outputs/study_events.csv"
 DAILY_SESSIONS_CSV_PATH = "outputs/daily_sessions.csv"
+CALENDAR_EVENTS_CSV_PATH = "outputs/calendar_events.csv"
 STUDY_EVENT_MIN_DURATION_SECONDS = 2.0
+# A study day runs from 05:00 through 04:59 the next calendar day.
+STUDY_DAY_START_HOUR = 5
+
+GEMINI_MODEL = "gemini-2.0-flash"
+AI_FEEDBACK_COOLDOWN_SECONDS = 180
+AI_FEEDBACK_TRIGGER_COOLDOWN_SECONDS = 60
+AI_FEEDBACK_TIMEOUT_SECONDS = 8
+TARGET_STUDY_TIME_HOURS = 4.0
+
 
 ENABLE_BAD_POSTURE_SOUND = True
 BAD_POSTURE_SOUND_AFTER_SECONDS = 5

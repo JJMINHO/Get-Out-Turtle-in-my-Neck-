@@ -11,16 +11,11 @@ import time
 from datetime import datetime
 
 import src.config as config
-from src.distance_analyzer import DistanceAnalyzer
-from src.eye_analyzer import EyeAnalyzer
-from src.face_analyzer import FaceAnalyzer
+from src.ai_feedback import AiFeedbackCoach
 from src.focus_score import FocusScoreCalculator
-from src.gaze_analyzer import GazeAnalyzer
-from src.head_pose_analyzer import HeadPoseAnalyzer
-from src.pose_analyzer import PoseAnalyzer
 from src.posture_score import PostureScoreCalculator
 from src.study_event_segmenter import StudyEventSegmenter
-from src.study_session import StudySession
+from src.study_session import StudySession, study_day_string
 
 
 class CameraWorker:
@@ -56,16 +51,17 @@ class CameraWorker:
         self.thread = None
         self.ui_callback = ui_callback
 
-        self.pose_analyzer = PoseAnalyzer()
-        self.face_analyzer = FaceAnalyzer()
-        self.distance_analyzer = DistanceAnalyzer()
-        self.eye_analyzer = EyeAnalyzer()
-        self.gaze_analyzer = GazeAnalyzer()
-        self.head_pose_analyzer = HeadPoseAnalyzer()
+        self.pose_analyzer = None
+        self.face_analyzer = None
+        self.distance_analyzer = None
+        self.eye_analyzer = None
+        self.gaze_analyzer = None
+        self.head_pose_analyzer = None
         self.posture_calculator = PostureScoreCalculator()
         self.focus_calculator = FocusScoreCalculator()
         self.study_event_segmenter = StudyEventSegmenter()
         self.study_session = StudySession()
+        self.ai_feedback_coach = AiFeedbackCoach()
 
         os.makedirs(os.path.dirname(config.CSV_LOG_PATH), exist_ok=True)
         if not os.path.exists(config.CSV_LOG_PATH):
@@ -84,8 +80,10 @@ class CameraWorker:
 
     def start(self):
         if not self.is_running:
+            self._send_dashboard_status("Starting", is_running=True)
             self.posture_calculator.reset_calibration()
-            self.eye_analyzer.reset()
+            if self.eye_analyzer is not None:
+                self.eye_analyzer.reset()
             self.session_start_time = int(time.time())
             self.focused_time = 0
             self.good_posture_time = 0
@@ -109,11 +107,37 @@ class CameraWorker:
             self.thread = threading.Thread(target=self._run_loop, daemon=True)
             self.thread.start()
 
+    def _ensure_analyzers(self):
+        if self.pose_analyzer is not None:
+            return
+
+        from src.distance_analyzer import DistanceAnalyzer
+        from src.eye_analyzer import EyeAnalyzer
+        from src.face_analyzer import FaceAnalyzer
+        from src.gaze_analyzer import GazeAnalyzer
+        from src.head_pose_analyzer import HeadPoseAnalyzer
+        from src.pose_analyzer import PoseAnalyzer
+
+        self.pose_analyzer = PoseAnalyzer()
+        self.face_analyzer = FaceAnalyzer()
+        self.distance_analyzer = DistanceAnalyzer()
+        self.eye_analyzer = EyeAnalyzer()
+        self.gaze_analyzer = GazeAnalyzer()
+        self.head_pose_analyzer = HeadPoseAnalyzer()
+
     def stop(self):
         self.is_running = False
         if self.thread:
             self.thread.join(timeout=2.0)
             self.thread = None
+
+    def pause(self):
+        """Pause analysis while keeping the dashboard window available."""
+        self._send_dashboard_status("Paused", is_running=False)
+        if self.thread is not None and threading.current_thread() is not self.thread:
+            self.stop()
+        else:
+            self.is_running = False
 
     def set_debug(self, state):
         self.show_debug = state
@@ -150,14 +174,17 @@ class CameraWorker:
 
     def reset_calibration(self):
         self.posture_calculator.reset_calibration()
-        self.eye_analyzer.reset()
+        if self.eye_analyzer is not None:
+            self.eye_analyzer.reset()
         print("Posture calibration reset.")
 
     def _run_loop(self):
+        self._ensure_analyzers()
+        self.eye_analyzer.reset()
         cap = self._open_camera()
         if cap is None:
             self.is_running = False
-            self._send_dashboard_status("Camera unavailable")
+            self._send_dashboard_status("Camera unavailable", is_running=False)
             return
 
         last_log_time = 0
@@ -304,9 +331,36 @@ class CameraWorker:
                 avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
                 avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
 
+                local_feedback = self._posture_feedback(p_status, slouch_risk)
+                ai_feedback = self.ai_feedback_coach.get_feedback(
+                    {
+                        "today_time_text": self._format_seconds(session_snapshot["today_seconds"]),
+                        "session_time_text": time_str,
+                        "posture_score": int(p_score),
+                        "posture_status": p_status,
+                        "focus_score": int(f_score),
+                        "focus_status": f_status,
+                        "focused_time_text": self._format_seconds(self.focused_time),
+                        "max_focused_time_text": self._format_seconds(session_snapshot["max_focused_streak_seconds"]),
+                        "away_time_text": self._format_seconds(self.away_time),
+                        "no_face_time_text": self._format_seconds(self.no_face_time),
+                        "study_state": study_state,
+                        "today_time_seconds": session_snapshot["today_seconds"],
+                        "session_time_seconds": session_snapshot["session_seconds"],
+                        "consecutive_distracted_seconds": self.current_focus_drop_seconds,
+                        "consecutive_bad_posture_seconds": self.current_bad_posture_seconds,
+                        "consecutive_drowsy_seconds": self.current_drowsy_seconds,
+                        "target_study_time_hours": config.TARGET_STUDY_TIME_HOURS,
+                    },
+                    local_feedback,
+                )
+
                 stats = {
                     "time_str": time_str,
+                    "session_seconds": session_snapshot["session_seconds"],
+                    "study_day": study_day_string(),
                     "today_time": session_snapshot["today_seconds"],
+                    "is_running": self.is_running,
                     "avg_p": avg_p,
                     "avg_f": avg_f,
                     "posture_score": int(p_score),
@@ -317,7 +371,7 @@ class CameraWorker:
                     "focus_score": int(f_score),
                     "focus_status": f_status,
                     "gaze_zone": gaze_zone,
-                    "feedback": self._posture_feedback(p_status, slouch_risk),
+                    "feedback": ai_feedback,
                     "focused_time": self.focused_time,
                     "max_focused_time": session_snapshot["max_focused_streak_seconds"],
                     "good_posture_time": self.good_posture_time,
@@ -344,7 +398,7 @@ class CameraWorker:
         cap.release()
         self.study_event_segmenter.close()
         self.study_session.finalize()
-        self._send_dashboard_status("Stopped")
+        self._send_dashboard_status("Stopped", is_running=False)
         cv2.destroyAllWindows()
 
     def _handle_dashboard_commands(self):
@@ -353,15 +407,22 @@ class CameraWorker:
 
         while not self.dashboard_command_queue.empty():
             command = self.dashboard_command_queue.get_nowait()
-            if command == "START_ANALYSIS":
+            if command == "TOGGLE_STUDY":
+                if self.is_running:
+                    self.pause()
+                else:
+                    self.start()
+            elif command == "START_ANALYSIS":
                 if self.is_running:
                     self.reset_calibration()
                 else:
                     self.start()
+            elif command == "RESET_CALIBRATION":
+                self.reset_calibration()
             elif command == "SAVE_REPORT":
                 self._save_session_report()
-            elif command == "STOP_CAMERA":
-                self.is_running = False
+            elif command == "PAUSE_STUDY" or command == "STOP_CAMERA":
+                self.pause()
             elif command == "DASHBOARD_CLOSED":
                 self.show_dashboard = False
                 self.dashboard_process = None
@@ -386,6 +447,13 @@ class CameraWorker:
         if posture_status == "No Pose":
             return "상체가 카메라에 보이도록 앉아주세요."
         return "거북목 위험도가 높습니다. 귀와 어깨가 일직선이 되도록 자세를 조정하세요."
+
+    def _format_seconds(self, seconds):
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
 
     def _save_session_report(self):
         try:
@@ -414,10 +482,13 @@ class CameraWorker:
         except Exception as exc:
             print(f"Error saving session report: {exc}")
 
-    def _send_dashboard_status(self, camera_state):
+    def _send_dashboard_status(self, camera_state, is_running=None):
         if self.show_dashboard and self.dashboard_queue is not None:
             try:
-                self.dashboard_queue.put({"camera_state": camera_state})
+                status = {"camera_state": camera_state}
+                if is_running is not None:
+                    status["is_running"] = is_running
+                self.dashboard_queue.put(status)
             except Exception as exc:
                 print(f"Dashboard status update error: {exc}")
 

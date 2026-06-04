@@ -39,6 +39,8 @@
 - 자세 점수 및 집중도 점수 계산
 - study state event segmentation
 - 일일 공부 세션 기록 및 누적 공부 시간 표시
+- Gemini API 기반 AI 코치 피드백
+- 시험/마감 일정 기반 캘린더 요약
 - macOS 메뉴바 상태 표시
 - CSV 로그, 세션 이벤트, 일일 공부 기록 저장
 - 디버그 창을 통한 landmark 시각화
@@ -227,6 +229,42 @@ pip install -r requirements.txt
 
 # 3. 실행
 python main.py
+```
+
+Gemini 코치 피드백을 사용하려면 프로젝트 루트에 `.env` 파일을 만들고 API key를 넣습니다.
+앱 실행 시 `.env`를 자동으로 읽습니다. 키가 없거나 API 호출이 실패하면 기존 rule-based 피드백을 표시합니다.
+
+```bash
+cp .env.example .env
+```
+
+`.env`:
+
+```text
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+그 다음 평소처럼 실행합니다.
+
+```bash
+python main.py
+```
+
+배포 환경에서는 `.env` 대신 OS 환경변수 또는 패키징 도구의 secret 설정에 `GEMINI_API_KEY`를 넣으면 됩니다.
+
+시험, 프로젝트 마감일, 과제 일정을 반영하려면 다음 CSV에 일정을 추가합니다.
+
+```text
+outputs/calendar_events.csv
+```
+
+형식은 다음과 같습니다.
+
+```csv
+date,title,type,priority
+2026-06-10,운영체제 기말고사,exam,high
+2026-06-12,캡스톤 프로젝트 제출,deadline,high
 ```
 
 메뉴바에서 사용할 수 있는 주요 동작은 다음과 같습니다.

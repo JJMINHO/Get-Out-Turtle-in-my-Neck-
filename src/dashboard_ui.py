@@ -1,9 +1,17 @@
 """
 Healthcare-style dashboard UI for the live posture analysis view.
 """
+import calendar
+import csv
+import os
+from datetime import datetime
+
 import customtkinter as ctk
 from PIL import Image
 import cv2
+
+import src.config as config
+from src.study_session import study_day_string
 
 
 COLORS = {
@@ -25,7 +33,7 @@ FONT_TITLE = (FONT_FAMILY, 28, "bold")
 FONT_SUBTITLE = (FONT_FAMILY, 14)
 FONT_SECTION = (FONT_FAMILY, 16, "bold")
 FONT_BODY = (FONT_FAMILY, 14)
-FONT_VALUE = (FONT_FAMILY, 44, "bold")
+FONT_VALUE = (FONT_FAMILY, 40, "bold")
 FONT_BUTTON = (FONT_FAMILY, 15, "bold")
 
 
@@ -65,6 +73,19 @@ def _format_seconds(seconds):
     return f"{minutes:02d}:{secs:02d}"
 
 
+def _format_hours_minutes(seconds):
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, _secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def _safe_int(value):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _create_card(parent, **pack_options):
     card = ctk.CTkFrame(
         parent,
@@ -93,19 +114,681 @@ def _make_button(parent, text, command, fg_color, text_color, border_color=None)
     )
 
 
-def run_dashboard(data_queue, command_queue=None):
+def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_callback=None):
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
 
     app = ctk.CTk()
-    app.geometry("1280x760")
-    app.minsize(1200, 720)
+    app.geometry("1280x840")
+    app.minsize(900, 680)
     app.title("NeckCare Vision")
     app.configure(fg_color=COLORS["background"])
 
     def send_command(command):
         if command_queue is not None:
             command_queue.put(command)
+
+    is_studying = {"value": False}
+    latest_stats = {"value": {}}
+
+    def toggle_study():
+        send_command("TOGGLE_STUDY")
+
+    def build_calendar_data():
+        daily_totals = {}
+        if os.path.exists(config.DAILY_SESSIONS_CSV_PATH):
+            try:
+                with open(config.DAILY_SESSIONS_CSV_PATH, "r", newline="") as csv_file:
+                    reader = csv.DictReader(csv_file)
+                    for row in reader:
+                        day = row.get("date")
+                        if not day:
+                            continue
+                        entry = daily_totals.setdefault(day, {"study": 0, "focus": 0})
+                        entry["study"] += _safe_int(row.get("duration_seconds"))
+                        entry["focus"] += _safe_int(row.get("focused_seconds"))
+            except Exception as exc:
+                return {}, {}, f"캘린더 데이터를 읽을 수 없습니다: {exc}"
+
+        stats = latest_stats["value"]
+        if stats:
+            today = study_day_string()
+            entry = daily_totals.setdefault(today, {"study": 0, "focus": 0})
+            entry["study"] += _safe_int(stats.get("session_seconds", 0))
+            entry["focus"] += _safe_int(stats.get("focused_time", 0))
+
+        return daily_totals, build_event_records(), None
+
+    def build_event_records():
+        if not os.path.exists(config.CALENDAR_EVENTS_CSV_PATH):
+            return []
+
+        events = []
+        try:
+            with open(config.CALENDAR_EVENTS_CSV_PATH, "r", newline="") as csv_file:
+                reader = csv.DictReader(csv_file)
+                for index, row in enumerate(reader):
+                    day = row.get("date")
+                    title = row.get("title")
+                    if day and title:
+                        events.append({
+                            "id": str(index),
+                            "date": day,
+                            "title": title,
+                            "type": row.get("type", "deadline"),
+                            "priority": row.get("priority", "normal"),
+                        })
+        except Exception:
+            return []
+
+        return events
+
+    def show_calendar_window():
+        daily_totals, event_records, error_message = build_calendar_data()
+        active_study_day = study_day_string()
+        active_date = datetime.strptime(active_study_day, "%Y-%m-%d")
+        visible_month = {"year": active_date.year, "month": active_date.month}
+        selected_event_id = {"value": None}
+
+        window = ctk.CTkToplevel(app)
+        window.title("DeskPose Calendar")
+        window.geometry("1280x800")
+        window.minsize(1120, 720)
+        window.configure(fg_color=COLORS["background"])
+        window.transient(app)
+        window.focus()
+
+        shell = ctk.CTkFrame(window, fg_color=COLORS["background"])
+        shell.pack(fill="both", expand=True, padx=24, pady=22)
+
+        top_bar = ctk.CTkFrame(shell, fg_color="transparent")
+        top_bar.pack(fill="x", pady=(0, 16))
+
+        title_area = ctk.CTkFrame(top_bar, fg_color="transparent")
+        title_area.pack(side="left")
+        ctk.CTkLabel(
+            title_area,
+            text="캘린더",
+            font=(FONT_FAMILY, 24, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_area,
+            text="학습일은 05:00부터 다음날 04:59까지입니다.",
+            font=FONT_BODY,
+            text_color=COLORS["text_sub"],
+        ).pack(anchor="w", pady=(2, 0))
+
+        month_label = ctk.CTkLabel(
+            top_bar,
+            text="",
+            font=(FONT_FAMILY, 18, "bold"),
+            text_color=COLORS["text_main"],
+        )
+        month_label.pack(side="right", padx=(14, 0))
+
+        body = ctk.CTkFrame(shell, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=3, minsize=620)
+        body.grid_columnconfigure(1, weight=2, minsize=360)
+        body.grid_rowconfigure(0, weight=1)
+
+        calendar_frame = ctk.CTkFrame(
+            body,
+            fg_color=COLORS["card"],
+            border_width=1,
+            border_color=COLORS["border"],
+            corner_radius=16,
+        )
+        calendar_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+
+        manage_panel = ctk.CTkFrame(
+            body,
+            fg_color=COLORS["card"],
+            border_width=1,
+            border_color=COLORS["border"],
+            corner_radius=16,
+        )
+        manage_panel.grid(row=0, column=1, sticky="nsew")
+
+        nav_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        nav_frame.pack(side="right")
+
+        def shift_month(delta):
+            month_index = visible_month["month"] + delta
+            year = visible_month["year"]
+            if month_index < 1:
+                month_index = 12
+                year -= 1
+            elif month_index > 12:
+                month_index = 1
+                year += 1
+            visible_month["year"] = year
+            visible_month["month"] = month_index
+            render_month()
+
+        ctk.CTkButton(
+            nav_frame,
+            text="<",
+            command=lambda: shift_month(-1),
+            width=42,
+            height=36,
+            corner_radius=12,
+            font=(FONT_FAMILY, 16, "bold"),
+            fg_color="#FFFFFF",
+            hover_color="#F8FAFC",
+            text_color=COLORS["text_main"],
+            border_width=1,
+            border_color=COLORS["border"],
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            nav_frame,
+            text="이번 달",
+            command=lambda: go_today(),
+            width=78,
+            height=36,
+            corner_radius=12,
+            font=(FONT_FAMILY, 13, "bold"),
+            fg_color="#FFFFFF",
+            hover_color="#F8FAFC",
+            text_color=COLORS["text_main"],
+            border_width=1,
+            border_color=COLORS["border"],
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            nav_frame,
+            text=">",
+            command=lambda: shift_month(1),
+            width=42,
+            height=36,
+            corner_radius=12,
+            font=(FONT_FAMILY, 16, "bold"),
+            fg_color="#FFFFFF",
+            hover_color="#F8FAFC",
+            text_color=COLORS["text_main"],
+            border_width=1,
+            border_color=COLORS["border"],
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            manage_panel,
+            text="일정 관리",
+            font=(FONT_FAMILY, 20, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", padx=18, pady=(18, 4))
+
+        form_card = ctk.CTkFrame(manage_panel, fg_color="transparent")
+        form_card.pack(fill="x", padx=18, pady=(10, 0))
+
+        ctk.CTkLabel(
+            form_card,
+            text="날짜",
+            font=(FONT_FAMILY, 13, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", pady=(0, 6))
+
+        date_entry = ctk.CTkEntry(
+            form_card,
+            height=38,
+            font=FONT_BODY,
+            placeholder_text="YYYY-MM-DD",
+        )
+        date_entry.insert(0, active_study_day)
+        date_entry.pack(fill="x", pady=(0, 6))
+
+        date_picker_visible = {"value": False}
+        date_picker = ctk.CTkScrollableFrame(
+            form_card,
+            height=72,
+            fg_color="#F8FAFC",
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+
+        title_entry = ctk.CTkEntry(
+            form_card,
+            height=38,
+            font=FONT_BODY,
+            placeholder_text="일정 이름 없이 추가 가능",
+        )
+        title_entry.pack(fill="x", pady=(0, 8))
+
+        select_row = ctk.CTkFrame(form_card, fg_color="transparent")
+        select_row.pack(fill="x", pady=(0, 8))
+
+        type_menu = ctk.CTkOptionMenu(
+            select_row,
+            values=["none", "exam", "deadline", "project", "assignment"],
+            width=180,
+            height=38,
+            fg_color="#FFFFFF",
+            button_color=COLORS["primary_mint"],
+            button_hover_color=COLORS["primary_mint"],
+            text_color=COLORS["text_main"],
+            font=FONT_BODY,
+        )
+        type_menu.set("none")
+        type_menu.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        priority_menu = ctk.CTkOptionMenu(
+            select_row,
+            values=["high", "normal", "low"],
+            width=130,
+            height=38,
+            fg_color="#FFFFFF",
+            button_color=COLORS["primary_blue"],
+            button_hover_color=COLORS["primary_blue"],
+            text_color=COLORS["text_main"],
+            font=FONT_BODY,
+        )
+        priority_menu.set("normal")
+        priority_menu.pack(side="left")
+
+        action_row = ctk.CTkFrame(form_card, fg_color="transparent")
+        action_row.pack(fill="x", pady=(2, 10))
+
+        form_status = ctk.CTkLabel(
+            manage_panel,
+            text="",
+            font=(FONT_FAMILY, 12, "bold"),
+            text_color=COLORS["text_sub"],
+        )
+        form_status.pack(anchor="w", padx=18, pady=(0, 10))
+
+        ctk.CTkLabel(
+            manage_panel,
+            text="등록된 일정",
+            font=(FONT_FAMILY, 15, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", padx=18, pady=(2, 8))
+
+        event_list = ctk.CTkScrollableFrame(
+            manage_panel,
+            fg_color="#F8FAFC",
+            corner_radius=14,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        event_list.pack(fill="both", expand=True, padx=18, pady=(0, 18))
+
+        def ensure_calendar_events_file():
+            os.makedirs(os.path.dirname(config.CALENDAR_EVENTS_CSV_PATH), exist_ok=True)
+            if os.path.exists(config.CALENDAR_EVENTS_CSV_PATH):
+                return
+            with open(config.CALENDAR_EVENTS_CSV_PATH, "w", newline="") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(["date", "title", "type", "priority"])
+
+        def write_calendar_events():
+            ensure_calendar_events_file()
+            with open(config.CALENDAR_EVENTS_CSV_PATH, "w", newline="") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(["date", "title", "type", "priority"])
+                for event in event_records:
+                    writer.writerow([
+                        event["date"],
+                        event["title"],
+                        event["type"],
+                        event["priority"],
+                    ])
+
+        def next_event_id():
+            existing_ids = [_safe_int(event.get("id")) for event in event_records]
+            return str((max(existing_ids) + 1) if existing_ids else 0)
+
+        def find_selected_event():
+            event_id = selected_event_id["value"]
+            if event_id is None:
+                return None
+            for event in event_records:
+                if event["id"] == event_id:
+                    return event
+            return None
+
+        def clear_event_form():
+            selected_event_id["value"] = None
+            title_entry.delete(0, "end")
+            type_menu.set("none")
+            priority_menu.set("normal")
+            form_status.configure(text="새 일정", text_color=COLORS["text_sub"])
+            render_event_list()
+
+        def hide_date_picker():
+            if date_picker_visible["value"]:
+                date_picker.pack_forget()
+                date_picker_visible["value"] = False
+
+        def show_date_picker():
+            if not date_picker_visible["value"]:
+                date_picker.pack(fill="x", pady=(0, 8), before=title_entry)
+                date_picker_visible["value"] = True
+                render_date_picker()
+
+        def toggle_date_picker(_event=None):
+            if date_picker_visible["value"]:
+                hide_date_picker()
+            else:
+                show_date_picker()
+
+        date_entry.bind("<Button-1>", toggle_date_picker)
+        try:
+            date_entry._entry.bind("<Button-1>", toggle_date_picker)
+        except AttributeError:
+            pass
+
+        def select_date(day_key):
+            date_entry.delete(0, "end")
+            date_entry.insert(0, day_key)
+            form_status.configure(text="날짜 선택됨", text_color=COLORS["primary_blue"])
+            render_date_picker()
+            hide_date_picker()
+
+        def select_event(event_id):
+            selected_event_id["value"] = event_id
+            event = find_selected_event()
+            if event is None:
+                clear_event_form()
+                return
+
+            date_entry.delete(0, "end")
+            date_entry.insert(0, event["date"])
+            title_entry.delete(0, "end")
+            title_entry.insert(0, event["title"])
+            type_menu.set(event["type"])
+            priority_menu.set(event["priority"])
+            form_status.configure(text="선택됨", text_color=COLORS["primary_blue"])
+            hide_date_picker()
+            render_event_list()
+
+        def read_event_form():
+            day = date_entry.get().strip()
+            title = title_entry.get().strip()
+            event_type = type_menu.get().strip()
+            priority = priority_menu.get().strip()
+
+            try:
+                parsed_day = datetime.strptime(day, "%Y-%m-%d")
+            except ValueError:
+                form_status.configure(text="날짜 형식을 확인하세요.", text_color=COLORS["danger"])
+                return
+
+            if not title:
+                title = "메모 없음"
+
+            return {
+                "date": day,
+                "title": title,
+                "type": event_type,
+                "priority": priority,
+            }, parsed_day
+
+        def add_calendar_event():
+            event, parsed_day = read_event_form()
+            if event is None:
+                return
+
+            event["id"] = next_event_id()
+            event_records.append(event)
+            write_calendar_events()
+            visible_month["year"] = parsed_day.year
+            visible_month["month"] = parsed_day.month
+            selected_event_id["value"] = event["id"]
+            title_entry.delete(0, "end")
+            form_status.configure(text="추가됨", text_color=COLORS["normal"])
+            render_month()
+            render_event_list()
+
+        def update_calendar_event():
+            selected = find_selected_event()
+            if selected is None:
+                form_status.configure(text="수정할 일정을 선택하세요.", text_color=COLORS["danger"])
+                return
+
+            event, parsed_day = read_event_form()
+            if event is None:
+                return
+
+            selected.update(event)
+            write_calendar_events()
+            visible_month["year"] = parsed_day.year
+            visible_month["month"] = parsed_day.month
+            form_status.configure(text="수정됨", text_color=COLORS["normal"])
+            render_month()
+            render_event_list()
+
+        def delete_calendar_event():
+            selected = find_selected_event()
+            if selected is None:
+                form_status.configure(text="삭제할 일정을 선택하세요.", text_color=COLORS["danger"])
+                return
+
+            event_records.remove(selected)
+            write_calendar_events()
+            clear_event_form()
+            form_status.configure(text="삭제됨", text_color=COLORS["normal"])
+            render_month()
+
+        ctk.CTkButton(
+            action_row,
+            text="추가",
+            command=add_calendar_event,
+            width=76,
+            height=42,
+            corner_radius=12,
+            font=FONT_BUTTON,
+            fg_color=COLORS["primary_mint"],
+            hover_color=COLORS["primary_mint"],
+            text_color="#FFFFFF",
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(
+            action_row,
+            text="수정",
+            command=update_calendar_event,
+            width=76,
+            height=42,
+            corner_radius=12,
+            font=FONT_BUTTON,
+            fg_color="#EFF6FF",
+            hover_color="#EFF6FF",
+            text_color=COLORS["primary_blue"],
+            border_width=1,
+            border_color="#BFDBFE",
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkButton(
+            action_row,
+            text="삭제",
+            command=delete_calendar_event,
+            width=76,
+            height=42,
+            corner_radius=12,
+            font=FONT_BUTTON,
+            fg_color="#FEF2F2",
+            hover_color="#FEF2F2",
+            text_color=COLORS["danger"],
+            border_width=1,
+            border_color="#FECACA",
+        ).pack(side="left", fill="x", expand=True)
+
+        def render_event_list():
+            for child in event_list.winfo_children():
+                child.destroy()
+
+            if not event_records:
+                ctk.CTkLabel(
+                    event_list,
+                    text="등록된 일정이 없습니다.",
+                    font=FONT_BODY,
+                    text_color=COLORS["text_sub"],
+                ).pack(anchor="w", padx=12, pady=12)
+                return
+
+            sorted_events = sorted(event_records, key=lambda event: (event["date"], event["title"]))
+            for event in sorted_events:
+                selected = event["id"] == selected_event_id["value"]
+                event_color = COLORS["danger"] if event["priority"] == "high" else COLORS["caution"]
+                event_label = event["title"] if event["type"] == "none" else f"{event['type']} · {event['title']}"
+                row = ctk.CTkButton(
+                    event_list,
+                    text=f"{event['date']}\n{event_label}",
+                    command=lambda event_id=event["id"]: select_event(event_id),
+                    height=54,
+                    corner_radius=10,
+                    font=(FONT_FAMILY, 13, "bold" if selected else "normal"),
+                    fg_color="#E6FFFB" if selected else "#FFFFFF",
+                    hover_color="#E6FFFB",
+                    text_color=event_color if selected else COLORS["text_main"],
+                    border_width=1,
+                    border_color=COLORS["primary_mint"] if selected else COLORS["border"],
+                    anchor="w",
+                )
+                row.pack(fill="x", padx=8, pady=(8, 0))
+
+        def go_today():
+            now = datetime.now()
+            current_study_day = datetime.strptime(study_day_string(), "%Y-%m-%d")
+            visible_month["year"] = current_study_day.year
+            visible_month["month"] = current_study_day.month
+            render_month()
+
+        def render_date_picker():
+            for child in date_picker.winfo_children():
+                child.destroy()
+
+            year = visible_month["year"]
+            month = visible_month["month"]
+            month_days = calendar.Calendar(firstweekday=6).itermonthdates(year, month)
+            for day_date in month_days:
+                if day_date.month != month:
+                    continue
+
+                day_key = day_date.strftime("%Y-%m-%d")
+                selected = date_entry.get().strip() == day_key
+                button = ctk.CTkButton(
+                    date_picker,
+                    text=f"{day_date.day:02d}  {day_key}",
+                    command=lambda selected_day=day_key: select_date(selected_day),
+                    height=32,
+                    corner_radius=9,
+                    font=(FONT_FAMILY, 12, "bold" if selected else "normal"),
+                    fg_color="#E6FFFB" if selected else "#FFFFFF",
+                    hover_color="#E6FFFB",
+                    text_color=COLORS["primary_mint"] if selected else COLORS["text_main"],
+                    border_width=1,
+                    border_color=COLORS["primary_mint"] if selected else COLORS["border"],
+                    anchor="w",
+                )
+                button.pack(fill="x", padx=6, pady=(6, 0))
+
+        def render_month():
+            for child in calendar_frame.winfo_children():
+                child.destroy()
+            render_date_picker()
+
+            year = visible_month["year"]
+            month = visible_month["month"]
+            month_label.configure(text=f"{year}.{month:02d}")
+
+            if error_message:
+                ctk.CTkLabel(
+                    calendar_frame,
+                    text=error_message,
+                    font=FONT_BODY,
+                    text_color=COLORS["danger"],
+                ).grid(row=0, column=0, columnspan=7, padx=18, pady=18, sticky="w")
+                return
+
+            weekday_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            for column, weekday in enumerate(weekday_labels):
+                ctk.CTkLabel(
+                    calendar_frame,
+                    text=weekday,
+                    font=(FONT_FAMILY, 13, "bold"),
+                    text_color=COLORS["text_sub"],
+                ).grid(row=0, column=column, padx=8, pady=(14, 8), sticky="ew")
+                calendar_frame.grid_columnconfigure(column, weight=1, uniform="calendar-day")
+
+            month_matrix = calendar.Calendar(firstweekday=6).monthdatescalendar(year, month)
+            events_by_day = {}
+            for event in event_records:
+                events_by_day.setdefault(event["date"], []).append(event)
+
+            for row_index, week in enumerate(month_matrix, start=1):
+                calendar_frame.grid_rowconfigure(row_index, weight=1, uniform="calendar-week")
+                for column_index, day_date in enumerate(week):
+                    day_key = day_date.strftime("%Y-%m-%d")
+                    is_current_month = day_date.month == month
+                    is_today = day_key == study_day_string()
+                    totals = daily_totals.get(day_key, {"study": 0, "focus": 0})
+                    events = events_by_day.get(day_key, [])
+                    has_content = totals["study"] > 0 or totals["focus"] > 0 or bool(events)
+
+                    cell = ctk.CTkFrame(
+                        calendar_frame,
+                        fg_color="#FFFFFF" if is_current_month else "#F8FAFC",
+                        corner_radius=12,
+                        border_width=2 if is_today else 1,
+                        border_color=COLORS["primary_mint"] if is_today else COLORS["border"],
+                    )
+                    cell.grid(row=row_index, column=column_index, padx=7, pady=7, sticky="nsew")
+
+                    day_color = COLORS["text_main"] if is_current_month else "#CBD5E1"
+                    ctk.CTkLabel(
+                        cell,
+                        text=f"{day_date.day}" + (" · 오늘" if is_today else ""),
+                        font=(FONT_FAMILY, 15, "bold"),
+                        text_color=day_color,
+                    ).pack(anchor="nw", padx=10, pady=(8, 2))
+
+                    if totals["study"] > 0:
+                        ctk.CTkLabel(
+                            cell,
+                            text=f"학습 {_format_hours_minutes(totals['study'])}",
+                            font=(FONT_FAMILY, 12, "bold"),
+                            text_color=COLORS["primary_blue"],
+                        ).pack(anchor="w", padx=10)
+                    if totals["focus"] > 0:
+                        ctk.CTkLabel(
+                            cell,
+                            text=f"집중 {_format_hours_minutes(totals['focus'])}",
+                            font=(FONT_FAMILY, 12, "bold"),
+                            text_color=COLORS["primary_mint"],
+                        ).pack(anchor="w", padx=10)
+
+                    for event in events[:2]:
+                        event_color = COLORS["danger"] if event["priority"] == "high" else COLORS["caution"]
+                        event_label = event["title"] if event["type"] == "none" else f"{event['type']} · {event['title']}"
+                        ctk.CTkButton(
+                            cell,
+                            text=event_label,
+                            command=lambda event_id=event["id"]: select_event(event_id),
+                            height=22,
+                            corner_radius=8,
+                            font=(FONT_FAMILY, 11),
+                            fg_color="#FFFFFF",
+                            hover_color="#F8FAFC",
+                            text_color=event_color,
+                            border_width=0,
+                            anchor="w",
+                        ).pack(fill="x", padx=8, pady=(2, 0))
+                    if len(events) > 2:
+                        ctk.CTkLabel(
+                            cell,
+                            text=f"+{len(events) - 2} more",
+                            font=(FONT_FAMILY, 11, "bold"),
+                            text_color=COLORS["text_sub"],
+                        ).pack(anchor="w", padx=10, pady=(2, 0))
+
+                    if not has_content:
+                        ctk.CTkLabel(
+                            cell,
+                            text="",
+                            font=(FONT_FAMILY, 11),
+                            text_color=COLORS["text_sub"],
+                        ).pack(anchor="w", padx=10)
+
+        render_month()
+        render_event_list()
 
     root = ctk.CTkFrame(app, fg_color=COLORS["background"])
     root.pack(fill="both", expand=True, padx=28, pady=24)
@@ -128,6 +811,21 @@ def run_dashboard(data_queue, command_queue=None):
         font=FONT_SUBTITLE,
         text_color=COLORS["text_sub"],
     ).pack(anchor="w", pady=(2, 0))
+
+    calendar_button = ctk.CTkButton(
+        header,
+        text="캘린더",
+        command=show_calendar_window,
+        width=92,
+        height=38,
+        corner_radius=14,
+        font=(FONT_FAMILY, 14, "bold"),
+        fg_color="#FFFFFF",
+        hover_color="#F8FAFC",
+        text_color=COLORS["text_main"],
+        border_width=1,
+        border_color=COLORS["border"],
+    )
 
     timer = ctk.CTkLabel(
         header,
@@ -152,6 +850,7 @@ def run_dashboard(data_queue, command_queue=None):
         pady=8,
     )
     today_timer.pack(side="right", padx=(0, 10))
+    calendar_button.pack(side="right", padx=(0, 10))
 
     content = ctk.CTkFrame(root, fg_color="transparent")
     content.pack(fill="both", expand=True)
@@ -171,11 +870,27 @@ def run_dashboard(data_queue, command_queue=None):
     camera_view_enabled = ctk.BooleanVar(value=True)
 
     def update_camera_view_state():
+        try:
+            side_panel.winfo_exists()
+        except NameError:
+            return
+
         if not camera_view_enabled.get():
             video_label.configure(image="", text="Camera view hidden")
+            camera_card.pack_forget()
+            side_panel.pack_forget()
+            side_panel.configure(width=560)
+            side_panel.pack(fill="both", expand=True)
+            app.geometry("760x840")
+        else:
+            side_panel.pack_forget()
+            camera_card.pack(side="left", fill="both", expand=True, padx=(0, 18))
+            side_panel.configure(width=520)
+            side_panel.pack(side="right", fill="both")
+            app.geometry("1280x840")
 
     camera_view_switch = ctk.CTkSwitch(
-        camera_header,
+        header,
         text="Camera View",
         variable=camera_view_enabled,
         command=update_camera_view_state,
@@ -184,7 +899,7 @@ def run_dashboard(data_queue, command_queue=None):
         font=(FONT_FAMILY, 13, "bold"),
         text_color=COLORS["text_sub"],
     )
-    camera_view_switch.pack(side="right")
+    camera_view_switch.pack(side="right", padx=(0, 10))
 
     camera_state = ctk.CTkLabel(
         camera_header,
@@ -205,19 +920,21 @@ def run_dashboard(data_queue, command_queue=None):
     )
     video_label.pack(expand=True, fill="both", padx=12, pady=12)
 
-    side_panel = ctk.CTkFrame(content, fg_color="transparent", width=360)
-    side_panel.pack(side="right", fill="y")
-    side_panel.pack_propagate(False)
+    side_panel = ctk.CTkScrollableFrame(content, fg_color="transparent", width=520)
+    side_panel.pack(side="right", fill="both")
 
-    score_card = _create_card(side_panel, fill="x", pady=(0, 14))
+    score_row = ctk.CTkFrame(side_panel, fg_color="transparent")
+    score_row.pack(fill="x", pady=(0, 14))
+
+    score_card = _create_card(score_row, side="left", fill="both", expand=True, padx=(0, 7))
     ctk.CTkLabel(score_card, text="Posture Score", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
-        anchor="w", padx=22, pady=(20, 0)
+        anchor="w", padx=16, pady=(18, 0)
     )
-    score_value = ctk.CTkLabel(score_card, text="-- / 100", font=FONT_VALUE, text_color=COLORS["text_main"])
-    score_value.pack(anchor="w", padx=22, pady=(4, 4))
+    score_value = ctk.CTkLabel(score_card, text="--", font=FONT_VALUE, text_color=COLORS["text_main"])
+    score_value.pack(anchor="w", padx=16, pady=(4, 4))
     status_badge = ctk.CTkLabel(
         score_card,
-        text="● Caution",
+        text="Caution",
         font=(FONT_FAMILY, 14, "bold"),
         text_color=COLORS["caution"],
         fg_color="#FFF7ED",
@@ -225,28 +942,14 @@ def run_dashboard(data_queue, command_queue=None):
         padx=12,
         pady=5,
     )
-    status_badge.pack(anchor="w", padx=22, pady=(0, 20))
+    status_badge.pack(anchor="w", padx=16, pady=(0, 18))
 
-    focus_card = _create_card(side_panel, fill="x", pady=(0, 14))
+    focus_card = _create_card(score_row, side="left", fill="both", expand=True, padx=(7, 0))
     ctk.CTkLabel(focus_card, text="Focus Score", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
-        anchor="w", padx=22, pady=(18, 0)
+        anchor="w", padx=16, pady=(18, 0)
     )
-    focus_value = ctk.CTkLabel(focus_card, text="-- / 100", font=FONT_VALUE, text_color=COLORS["text_main"])
-    focus_value.pack(anchor="w", padx=22, pady=(4, 4))
-    focus_status = ctk.CTkLabel(
-        focus_card,
-        text="화면 집중 상태를 분석 중입니다.",
-        font=FONT_BODY,
-        text_color=COLORS["text_sub"],
-    )
-    focus_status.pack(anchor="w", padx=22)
-    focus_detail = ctk.CTkLabel(
-        focus_card,
-        text="Gaze: --   Focused: 00:00   Best: 00:00",
-        font=(FONT_FAMILY, 13),
-        text_color=COLORS["text_sub"],
-    )
-    focus_detail.pack(anchor="w", padx=22, pady=(4, 20))
+    focus_value = ctk.CTkLabel(focus_card, text="--", font=FONT_VALUE, text_color=COLORS["text_main"])
+    focus_value.pack(anchor="w", padx=16, pady=(4, 18))
 
     study_card = _create_card(side_panel, fill="x", pady=(0, 14))
     ctk.CTkLabel(study_card, text="Study Session", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
@@ -258,21 +961,35 @@ def run_dashboard(data_queue, command_queue=None):
         font=(FONT_FAMILY, 24, "bold"),
         text_color=COLORS["text_main"],
     )
-    study_state.pack(anchor="w", padx=22, pady=(4, 2))
-    study_detail = ctk.CTkLabel(
-        study_card,
-        text="Good 00:00   Away 00:00",
-        font=(FONT_FAMILY, 13),
-        text_color=COLORS["text_sub"],
+    study_state.pack(anchor="w", padx=22, pady=(4, 18))
+
+    daily_row = ctk.CTkFrame(side_panel, fg_color="transparent")
+    daily_row.pack(fill="x", pady=(0, 14))
+
+    daily_card = _create_card(daily_row, side="left", fill="both", expand=True, padx=(0, 7))
+    ctk.CTkLabel(daily_card, text="학습 시간", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+        anchor="w", padx=16, pady=(18, 0)
     )
-    study_detail.pack(anchor="w", padx=22, pady=(0, 4))
-    study_detail_2 = ctk.CTkLabel(
-        study_card,
-        text="Bad 00:00   No Face 00:00",
-        font=(FONT_FAMILY, 13),
-        text_color=COLORS["text_sub"],
+    daily_value = ctk.CTkLabel(
+        daily_card,
+        text="00:00",
+        font=(FONT_FAMILY, 30, "bold"),
+        text_color=COLORS["primary_blue"],
     )
-    study_detail_2.pack(anchor="w", padx=22, pady=(0, 18))
+    daily_value.pack(anchor="w", padx=16, pady=(4, 18))
+
+    focus_time_card = _create_card(daily_row, side="left", fill="both", expand=True, padx=(7, 0))
+    ctk.CTkLabel(focus_time_card, text="집중 시간", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+        anchor="w", padx=16, pady=(18, 0)
+    )
+    focus_time_value = ctk.CTkLabel(
+        focus_time_card,
+        text="00:00",
+        font=(FONT_FAMILY, 30, "bold"),
+        text_color=COLORS["primary_mint"],
+    )
+    focus_time_value.pack(anchor="w", padx=16, pady=(4, 18))
+
 
     feedback_card = _create_card(side_panel, fill="both", expand=True)
     ctk.CTkLabel(feedback_card, text="Feedback", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
@@ -281,7 +998,7 @@ def run_dashboard(data_queue, command_queue=None):
     feedback_text = ctk.CTkLabel(
         feedback_card,
         text="카메라를 시작하면 자세 피드백이 표시됩니다.",
-        font=(FONT_FAMILY, 17, "bold"),
+        font=(FONT_FAMILY, 15, "bold"),
         text_color=COLORS["text_main"],
         wraplength=290,
         justify="left",
@@ -293,37 +1010,30 @@ def run_dashboard(data_queue, command_queue=None):
 
     start_button = _make_button(
         controls,
-        "Start Analysis",
-        lambda: send_command("START_ANALYSIS"),
+        "학습 시작",
+        toggle_study,
         COLORS["primary_mint"],
         "#FFFFFF",
     )
     start_button.pack(side="left", padx=(0, 12))
 
-    stop_button = _make_button(
+    reset_button = _make_button(
         controls,
-        "Stop Camera",
-        lambda: send_command("STOP_CAMERA"),
-        "#FFFFFF",
+        "자세 리셋",
+        lambda: send_command("RESET_CALIBRATION"),
+        "#F8FAFC",
         COLORS["text_main"],
         COLORS["border"],
     )
-    stop_button.pack(side="left", padx=(0, 12))
-
-    save_button = _make_button(
-        controls,
-        "Save Report",
-        lambda: send_command("SAVE_REPORT"),
-        "#EFF6FF",
-        COLORS["primary_blue"],
-        "#BFDBFE",
-    )
-    save_button.pack(side="left")
+    reset_button.pack(side="left", padx=(0, 12))
 
     latest_image = {"value": None}
 
     def update():
         try:
+            if command_poller is not None:
+                command_poller()
+
             data = None
             while not data_queue.empty():
                 data = data_queue.get_nowait()
@@ -335,11 +1045,19 @@ def run_dashboard(data_queue, command_queue=None):
             if data is not None:
                 if "camera_state" in data and "stats" not in data:
                     camera_state.configure(text=data["camera_state"])
+                    if "is_running" in data:
+                        is_studying["value"] = bool(data["is_running"])
+                        start_button.configure(
+                            text="학습 중지" if is_studying["value"] else "학습 시작",
+                            fg_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
+                            hover_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
+                        )
                     app.after(33, update)
                     return
 
                 frame = data.get("frame")
                 stats = data.get("stats", {})
+                latest_stats["value"] = stats
 
                 if frame is not None:
                     if camera_view_enabled.get():
@@ -351,16 +1069,24 @@ def run_dashboard(data_queue, command_queue=None):
                     camera_state.configure(text="Analyzing")
 
                 timer.configure(text=stats.get("time_str", "00:00:00"))
-                today_timer.configure(text=f"Today {_format_seconds(stats.get('today_time', 0))}")
+                today_seconds = stats.get("today_time", 0)
+                current_study_day = stats.get("study_day", study_day_string())
+                today_timer.configure(text=f"{current_study_day} · {_format_seconds(today_seconds)}")
+                daily_value.configure(text=_format_seconds(today_seconds))
+                focused_time = stats.get("focused_time", 0)
+                focus_time_value.configure(text=_format_seconds(focused_time))
+                is_studying["value"] = bool(stats.get("is_running", True))
+                start_button.configure(
+                    text="학습 중지" if is_studying["value"] else "학습 시작",
+                    fg_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
+                    hover_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
+                )
 
                 posture_score = int(stats.get("posture_score", stats.get("avg_p", 0)))
                 posture_status = stats.get("posture_status", "Warning")
                 risk_label, risk_color = _risk_from_status(posture_status)
                 current_focus_score = int(stats.get("focus_score", stats.get("avg_f", 0)))
                 current_focus_status = stats.get("focus_status", "Away")
-                current_gaze_zone = stats.get("gaze_zone", "--")
-                focused_time = stats.get("focused_time", 0)
-                max_focused_time = stats.get("max_focused_time", 0)
                 focus_text_color = _focus_color(current_focus_status)
                 current_study_state = stats.get("study_state", "Analyzing")
                 state_color = {
@@ -373,38 +1099,11 @@ def run_dashboard(data_queue, command_queue=None):
                     "Drowsy": COLORS["danger"],
                 }.get(current_study_state, COLORS["text_main"])
 
-                score_value.configure(text=f"{posture_score} / 100", text_color=risk_color)
-                focus_value.configure(text=f"{current_focus_score} / 100", text_color=focus_text_color)
-                focus_status.configure(
-                    text={
-                        "Focused": "화면을 안정적으로 보고 있습니다.",
-                        "Distracted": "시선이 잠시 흐트러졌습니다.",
-                        "Away": "화면 밖을 보고 있거나 얼굴이 감지되지 않습니다.",
-                    }.get(current_focus_status, f"현재 상태: {current_focus_status}"),
-                    text_color=focus_text_color,
-                )
-                focus_detail.configure(
-                    text=(
-                        f"Gaze: {current_gaze_zone}"
-                        f"   Focused: {_format_seconds(focused_time)}"
-                        f"   Best: {_format_seconds(max_focused_time)}"
-                    )
-                )
+                score_value.configure(text=str(posture_score), text_color=risk_color)
+                focus_value.configure(text=str(current_focus_score), text_color=focus_text_color)
                 study_state.configure(text=current_study_state, text_color=state_color)
-                study_detail.configure(
-                    text=(
-                        f"Good {_format_seconds(stats.get('good_posture_time', 0))}"
-                        f"   Away {_format_seconds(stats.get('away_time', 0))}"
-                    )
-                )
-                study_detail_2.configure(
-                    text=(
-                        f"Bad {_format_seconds(stats.get('bad_posture_time', 0))}"
-                        f"   No Face {_format_seconds(stats.get('no_face_time', 0))}"
-                    )
-                )
                 status_badge.configure(
-                    text=f"● {risk_label}",
+                    text=risk_label,
                     text_color=risk_color,
                     fg_color={
                         "Normal": "#ECFDF5",
@@ -421,8 +1120,51 @@ def run_dashboard(data_queue, command_queue=None):
 
     def on_close():
         send_command("DASHBOARD_CLOSED")
+        if on_close_callback is not None:
+            on_close_callback()
         app.destroy()
 
     app.protocol("WM_DELETE_WINDOW", on_close)
     app.after(33, update)
     app.mainloop()
+
+
+def run_dashboard_app(stop_worker_on_close=True):
+    """Run the dashboard as the main application window."""
+    import queue
+
+    from src.camera_worker import CameraWorker
+
+    data_queue = queue.Queue()
+    command_queue = queue.Queue()
+    worker = CameraWorker()
+    worker.show_dashboard = True
+    worker.dashboard_queue = data_queue
+    worker.dashboard_command_queue = command_queue
+
+    def poll_commands():
+        worker.handle_dashboard_commands()
+
+    def shutdown_worker():
+        worker.stop()
+        worker.set_debug(False)
+        detach_dashboard()
+
+    def detach_dashboard():
+        worker.show_dashboard = False
+        worker.dashboard_queue = None
+        worker.dashboard_command_queue = None
+
+    close_callback = shutdown_worker if stop_worker_on_close else detach_dashboard
+
+    try:
+        run_dashboard(
+            data_queue,
+            command_queue,
+            command_poller=poll_commands,
+            on_close_callback=close_callback,
+        )
+    finally:
+        close_callback()
+
+    return worker

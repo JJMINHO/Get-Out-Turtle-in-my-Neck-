@@ -6,6 +6,7 @@ import os
 import pandas as pd
 
 import src.config as config
+from src.study_session import study_day_string
 
 
 class SessionSummary:
@@ -39,7 +40,7 @@ class SessionSummary:
         ]
 
         if daily_log is not None and not daily_log.empty:
-            today = pd.Timestamp.today().strftime("%Y-%m-%d")
+            today = study_day_string()
             today_log = daily_log[daily_log["date"].eq(today)]
             if not today_log.empty:
                 today_seconds = today_log["duration_seconds"].sum()

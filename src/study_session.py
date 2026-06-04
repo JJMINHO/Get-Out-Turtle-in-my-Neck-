@@ -3,11 +3,24 @@ Track one study session and append daily study summaries to CSV.
 """
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 
 import src.config as config
+
+
+def study_day_for(moment=None):
+    """Return the study-day date for a 05:00 day boundary."""
+    current = moment or datetime.now()
+    start_hour = int(getattr(config, "STUDY_DAY_START_HOUR", 5))
+    if current.hour < start_hour:
+        current = current - timedelta(days=1)
+    return current.date()
+
+
+def study_day_string(moment=None):
+    return study_day_for(moment).strftime("%Y-%m-%d")
 
 
 class StudySession:
@@ -130,7 +143,7 @@ class StudySession:
 
     def today_total_seconds(self, include_current=False):
         total = 0
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = study_day_string()
         if os.path.exists(config.DAILY_SESSIONS_CSV_PATH):
             try:
                 sessions = pd.read_csv(config.DAILY_SESSIONS_CSV_PATH, engine="python", on_bad_lines="skip")
@@ -139,7 +152,12 @@ class StudySession:
             except Exception:
                 total = 0
 
-        if include_current and not self.finalized:
+        if (
+            include_current
+            and not self.finalized
+            and self.started_at is not None
+            and study_day_string(self.started_at) == today
+        ):
             total += self.duration_seconds
         return int(total)
 
@@ -160,7 +178,7 @@ class StudySession:
         with open(config.DAILY_SESSIONS_CSV_PATH, "a", newline="") as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow([
-                self.started_at.strftime("%Y-%m-%d"),
+                study_day_string(self.started_at),
                 self.started_at.strftime("%Y-%m-%d %H:%M:%S"),
                 self.ended_at.strftime("%Y-%m-%d %H:%M:%S"),
                 int(self.duration_seconds),

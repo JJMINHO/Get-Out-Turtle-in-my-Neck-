@@ -1,31 +1,37 @@
 """
 macOS menu bar UI implementation using rumps.
 """
+import csv
 import os
 import subprocess
 import threading
 
 import rumps
 
+import src.config as config
 from src.camera_worker import CameraWorker
 from src.session_summary import SessionSummary
+from src.study_session import study_day_string
 
 
 class DeskPoseApp(rumps.App):
-    def __init__(self):
+    def __init__(self, worker=None):
         super(DeskPoseApp, self).__init__("DeskPose")
         self.title = "DeskPose (Off)"
-        self.worker = CameraWorker(ui_callback=self.update_scores)
+        self.worker = worker or CameraWorker(ui_callback=self.update_scores)
+        self.worker.ui_callback = self.update_scores
         self.session_summary = SessionSummary()
-        self.is_monitoring = False
+        self.is_monitoring = self.worker.is_running
         self.latest_scores = None
         self.score_lock = threading.Lock()
 
         self.status_item = rumps.MenuItem("Status: Waiting...")
-        self.start_stop_button = rumps.MenuItem("Start Monitoring", callback=self.toggle_monitoring)
+        start_stop_title = "Stop Monitoring" if self.is_monitoring else "Start Monitoring"
+        self.start_stop_button = rumps.MenuItem(start_stop_title, callback=self.toggle_monitoring)
         self.dashboard_button = rumps.MenuItem("Show Dashboard", callback=self.toggle_dashboard)
         self.debug_button = rumps.MenuItem("Show Debug Window", callback=self.toggle_debug)
         self.summary_button = rumps.MenuItem("Show Session Summary", callback=self.show_session_summary)
+        self.calendar_button = rumps.MenuItem("캘린더", callback=self.show_calendar)
         self.open_outputs_button = rumps.MenuItem("Open Outputs Folder", callback=self.open_outputs_folder)
         self.reset_calibration_button = rumps.MenuItem("Reset Posture Calibration", callback=self.reset_calibration)
 
@@ -37,6 +43,7 @@ class DeskPoseApp(rumps.App):
             self.dashboard_button,
             self.debug_button,
             self.summary_button,
+            self.calendar_button,
             self.open_outputs_button,
             None,
             self.reset_calibration_button,
@@ -91,6 +98,83 @@ class DeskPoseApp(rumps.App):
             message=self.session_summary.build_summary(),
             ok="OK",
         )
+
+    def show_calendar(self, sender):
+        rumps.alert(
+            title="DeskPose 캘린더",
+            message=self._build_calendar_summary(),
+            ok="OK",
+        )
+
+    def _build_calendar_summary(self):
+        daily_totals = {}
+        if os.path.exists(config.DAILY_SESSIONS_CSV_PATH):
+            try:
+                with open(config.DAILY_SESSIONS_CSV_PATH, "r", newline="") as csv_file:
+                    reader = csv.DictReader(csv_file)
+                    for row in reader:
+                        day = row.get("date")
+                        if not day:
+                            continue
+                        entry = daily_totals.setdefault(day, {"study": 0, "focus": 0})
+                        entry["study"] += self._safe_int(row.get("duration_seconds"))
+                        entry["focus"] += self._safe_int(row.get("focused_seconds"))
+            except Exception as exc:
+                return f"Could not read calendar data.\n\n{exc}"
+
+        if self.worker and self.worker.study_session and not self.worker.study_session.finalized:
+            session = self.worker.study_session
+            if session.started_at is not None:
+                day = study_day_string(session.started_at)
+                entry = daily_totals.setdefault(day, {"study": 0, "focus": 0})
+                entry["study"] += int(session.duration_seconds)
+                entry["focus"] += int(session.focused_seconds)
+
+        if not daily_totals:
+            return "아직 학습 기록이 없습니다."
+
+        lines = ["학습일은 05:00부터 다음날 04:59까지입니다.", ""]
+        for day in sorted(daily_totals.keys(), reverse=True)[:21]:
+            entry = daily_totals[day]
+            lines.append(
+                f"{day}  학습 {self._format_seconds(entry['study'])}  |  집중 {self._format_seconds(entry['focus'])}"
+            )
+
+        event_lines = self._build_event_lines()
+        if event_lines:
+            lines.extend(["", "등록된 일정:", *event_lines])
+        return "\n".join(lines)
+
+    def _build_event_lines(self):
+        if not os.path.exists(config.CALENDAR_EVENTS_CSV_PATH):
+            return []
+
+        event_lines = []
+        try:
+            with open(config.CALENDAR_EVENTS_CSV_PATH, "r", newline="") as csv_file:
+                reader = csv.DictReader(csv_file)
+                for row in reader:
+                    day = row.get("date")
+                    title = row.get("title")
+                    if day and title:
+                        event_type = row.get("type", "deadline")
+                        priority = row.get("priority", "normal")
+                        event_lines.append(f"{day}  {event_type}  {title} ({priority})")
+        except Exception:
+            return []
+
+        return sorted(event_lines)[:10]
+
+    def _safe_int(self, value):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+    def _format_seconds(self, seconds):
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, _secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}"
 
     def update_scores(self, p_score, p_status, f_score, f_status):
         """Store scores received from the background camera worker."""
