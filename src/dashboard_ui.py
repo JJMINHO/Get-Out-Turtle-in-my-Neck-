@@ -11,6 +11,7 @@ from PIL import Image
 import cv2
 
 import src.config as config
+from src.daily_score import DailyScoreCalculator
 from src.study_session import study_day_string
 
 
@@ -86,6 +87,10 @@ def _safe_int(value):
         return 0
 
 
+def _percent(value):
+    return f"{int(round(max(0, min(float(value), 1.0)) * 100))}%"
+
+
 def _create_card(parent, **pack_options):
     card = ctk.CTkFrame(
         parent,
@@ -130,9 +135,284 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     is_studying = {"value": False}
     latest_stats = {"value": {}}
+    daily_score_calculator = DailyScoreCalculator()
+    daily_score_cache = {"updated_at": 0, "report": daily_score_calculator.calculate()}
 
     def toggle_study():
         send_command("TOGGLE_STUDY")
+
+    def current_daily_score():
+        now = datetime.now().timestamp()
+        if now - daily_score_cache["updated_at"] >= 5:
+            current_stats = latest_stats["value"] or None
+            if current_stats and not current_stats.get("is_running", False):
+                current_stats = None
+            daily_score_cache["report"] = daily_score_calculator.calculate(
+                day=study_day_string(),
+                current_stats=current_stats,
+            )
+            daily_score_cache["updated_at"] = now
+        return daily_score_cache["report"]
+
+    def add_metric_bar(parent, label, value, color, max_value=1.0):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(
+            row,
+            text=label,
+            font=(FONT_FAMILY, 13, "bold"),
+            text_color=COLORS["text_main"],
+            width=160,
+            anchor="w",
+        ).pack(side="left")
+        bar = ctk.CTkProgressBar(row, height=12, progress_color=color, fg_color="#E5E7EB")
+        bar.pack(side="left", fill="x", expand=True, padx=(10, 10))
+        bar.set(0 if max_value <= 0 else max(0, min(float(value) / float(max_value), 1.0)))
+        ctk.CTkLabel(
+            row,
+            text=_percent(value / max_value if max_value > 1 else value),
+            font=(FONT_FAMILY, 12, "bold"),
+            text_color=COLORS["text_sub"],
+            width=46,
+        ).pack(side="right")
+
+    def add_quadrant_tile(parent, row, column, title, subtitle, count, color, selected=False):
+        tile = ctk.CTkFrame(
+            parent,
+            fg_color="#F8FAFC" if not selected else "#E6FFFB",
+            corner_radius=14,
+            border_width=2 if selected else 1,
+            border_color=color if selected else COLORS["border"],
+        )
+        tile.grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
+        ctk.CTkLabel(
+            tile,
+            text=title,
+            font=(FONT_FAMILY, 15, "bold"),
+            text_color=color,
+        ).pack(anchor="w", padx=14, pady=(12, 2))
+        ctk.CTkLabel(
+            tile,
+            text=subtitle,
+            font=(FONT_FAMILY, 12),
+            text_color=COLORS["text_sub"],
+            wraplength=160,
+            justify="left",
+        ).pack(anchor="w", padx=14)
+        ctk.CTkLabel(
+            tile,
+            text=f"{count}",
+            font=(FONT_FAMILY, 24, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", padx=14, pady=(4, 12))
+
+    def add_timeline_summary(parent, report, state_colors):
+        durations = report["event_durations"]
+        bar = ctk.CTkFrame(parent, fg_color="#E5E7EB", height=20, corner_radius=10)
+        bar.pack(fill="x", padx=18, pady=(0, 12))
+        bar.pack_propagate(False)
+
+        offset = 0.0
+        visible_durations = sorted(durations.items(), key=lambda item: item[1], reverse=True)[:5]
+        visible_total = max(sum(duration for _event_type, duration in visible_durations), 1)
+        for event_type, duration in visible_durations:
+            ratio = duration / visible_total
+            segment = ctk.CTkFrame(
+                bar,
+                fg_color=state_colors.get(event_type, COLORS["text_sub"]),
+                corner_radius=8,
+            )
+            segment.place(relx=offset, rely=0, relwidth=min(ratio, 1.0 - offset), relheight=1)
+            offset = min(1.0, offset + ratio)
+            if offset >= 1.0:
+                break
+
+        legend = ctk.CTkFrame(parent, fg_color="transparent")
+        legend.pack(fill="x", padx=18, pady=(0, 10))
+        for event_type, duration in sorted(durations.items(), key=lambda item: item[1], reverse=True)[:5]:
+            item = ctk.CTkLabel(
+                legend,
+                text=f"{event_type} {_format_seconds(duration)}",
+                font=(FONT_FAMILY, 12, "bold"),
+                text_color=state_colors.get(event_type, COLORS["text_sub"]),
+            )
+            item.pack(side="left", padx=(0, 14))
+
+    def show_daily_report_window():
+        report = current_daily_score()
+
+        window = ctk.CTkToplevel(app)
+        window.title("Daily Vision Report")
+        window.geometry("960x720")
+        window.minsize(860, 620)
+        window.configure(fg_color=COLORS["background"])
+        window.transient(app)
+        window.focus()
+
+        shell = ctk.CTkFrame(window, fg_color=COLORS["background"])
+        shell.pack(fill="both", expand=True, padx=26, pady=24)
+
+        header_row = ctk.CTkFrame(shell, fg_color="transparent")
+        header_row.pack(fill="x", pady=(0, 18))
+        ctk.CTkLabel(
+            header_row,
+            text="Daily Vision Report",
+            font=(FONT_FAMILY, 26, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(side="left")
+        ctk.CTkLabel(
+            header_row,
+            text=report["date"],
+            font=(FONT_FAMILY, 15, "bold"),
+            text_color=COLORS["primary_blue"],
+            fg_color="#EAF4FF",
+            corner_radius=14,
+            padx=14,
+            pady=7,
+        ).pack(side="right")
+
+        top = ctk.CTkFrame(shell, fg_color="transparent")
+        top.pack(fill="x", pady=(0, 16))
+
+        score_card = _create_card(top, side="left", fill="both", expand=True, padx=(0, 14))
+        ctk.CTkLabel(
+            score_card,
+            text="Daily Study Score",
+            font=FONT_SECTION,
+            text_color=COLORS["text_sub"],
+        ).pack(anchor="w", padx=22, pady=(20, 0))
+        score_color = COLORS["normal"] if report["daily_score"] >= 75 else COLORS["caution"]
+        if report["daily_score"] < 50:
+            score_color = COLORS["danger"]
+        ctk.CTkLabel(
+            score_card,
+            text=f"{report['daily_score']:.1f}",
+            font=(FONT_FAMILY, 56, "bold"),
+            text_color=score_color,
+        ).pack(anchor="w", padx=22, pady=(2, 14))
+
+        parts_card = _create_card(top, side="left", fill="both", expand=True)
+        ctk.CTkLabel(
+            parts_card,
+            text="Score Parts",
+            font=FONT_SECTION,
+            text_color=COLORS["text_sub"],
+        ).pack(anchor="w", padx=22, pady=(20, 12))
+        add_metric_bar(parts_card, "집중농도", report["focus_part"], COLORS["primary_mint"], 40)
+        add_metric_bar(parts_card, "학습량", report["time_part"], COLORS["primary_blue"], 30)
+        add_metric_bar(parts_card, "비전 품질", report["quality_part"], COLORS["normal"], 30)
+
+        middle = ctk.CTkFrame(shell, fg_color="transparent")
+        middle.pack(fill="x", pady=(0, 16))
+
+        ratio_card = _create_card(middle, side="left", fill="both", expand=True, padx=(0, 14))
+        ctk.CTkLabel(ratio_card, text="Daily Metrics", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+            anchor="w", padx=22, pady=(20, 12)
+        )
+        add_metric_bar(ratio_card, "집중 비율", report["focus_density"], COLORS["primary_mint"])
+        add_metric_bar(ratio_card, "목표 학습량", report["time_ratio"], COLORS["primary_blue"])
+        add_metric_bar(ratio_card, "좋은 자세", report["good_posture_ratio"], COLORS["normal"])
+        add_metric_bar(ratio_card, "화면 안정성", report["stable_presence_ratio"], COLORS["caution"])
+
+        quadrant_card = _create_card(middle, side="left", fill="both", expand=True)
+        ctk.CTkLabel(
+            quadrant_card,
+            text="Focus x Posture Quadrant",
+            font=FONT_SECTION,
+            text_color=COLORS["text_sub"],
+        ).pack(anchor="w", padx=22, pady=(20, 12))
+        quadrants = report["quadrants"]
+        dominant_quadrant = max(quadrants.items(), key=lambda item: item[1])[0] if quadrants else "strong"
+        quadrant_grid = ctk.CTkFrame(quadrant_card, fg_color="transparent")
+        quadrant_grid.pack(fill="both", expand=True, padx=16, pady=(0, 18))
+        for row_index in range(2):
+            quadrant_grid.grid_rowconfigure(row_index, weight=1)
+        for column_index in range(2):
+            quadrant_grid.grid_columnconfigure(column_index, weight=1)
+        add_quadrant_tile(
+            quadrant_grid,
+            0,
+            0,
+            "Strong",
+            "Focus high / Posture high",
+            quadrants["strong"],
+            COLORS["normal"],
+            dominant_quadrant == "strong",
+        )
+        add_quadrant_tile(
+            quadrant_grid,
+            0,
+            1,
+            "Posture Risk",
+            "Focus high / Posture low",
+            quadrants["posture_risk"],
+            COLORS["caution"],
+            dominant_quadrant == "posture_risk",
+        )
+        add_quadrant_tile(
+            quadrant_grid,
+            1,
+            0,
+            "Focus Risk",
+            "Focus low / Posture high",
+            quadrants["focus_risk"],
+            COLORS["primary_blue"],
+            dominant_quadrant == "focus_risk",
+        )
+        add_quadrant_tile(
+            quadrant_grid,
+            1,
+            1,
+            "Low Quality",
+            "Focus low / Posture low",
+            quadrants["low_quality"],
+            COLORS["danger"],
+            dominant_quadrant == "low_quality",
+        )
+
+        timeline_card = _create_card(shell, fill="both", expand=True)
+        ctk.CTkLabel(
+            timeline_card,
+            text="Study State Timeline",
+            font=FONT_SECTION,
+            text_color=COLORS["text_sub"],
+        ).pack(anchor="w", padx=22, pady=(18, 10))
+        timeline = ctk.CTkScrollableFrame(timeline_card, fg_color="#F8FAFC", corner_radius=14)
+        timeline.pack(fill="both", expand=True, padx=18, pady=(0, 18))
+
+        state_colors = {
+            "Focused": COLORS["normal"],
+            "Reading": COLORS["primary_blue"],
+            "Bad Posture": COLORS["caution"],
+            "Looking Away": COLORS["danger"],
+            "No Face": COLORS["danger"],
+            "Drowsy": COLORS["danger"],
+            "Distracted": COLORS["caution"],
+        }
+        if report["event_durations"]:
+            add_timeline_summary(timeline_card, report, state_colors)
+        if not report["events"]:
+            ctk.CTkLabel(
+                timeline,
+                text="아직 기록된 study event가 없습니다.",
+                font=FONT_BODY,
+                text_color=COLORS["text_sub"],
+            ).pack(anchor="w", padx=14, pady=14)
+        for event in report["events"]:
+            color = state_colors.get(event["event_type"], COLORS["text_sub"])
+            row = ctk.CTkFrame(timeline, fg_color="#FFFFFF", corner_radius=10)
+            row.pack(fill="x", padx=10, pady=(10, 0))
+            ctk.CTkLabel(row, text=" ", width=8, fg_color=color, corner_radius=4).pack(side="left", fill="y")
+            text = (
+                f"{event['start_time'][-8:]} - {event['end_time'][-8:]}  "
+                f"{event['event_type']}  {_format_seconds(event['duration'])}"
+            )
+            ctk.CTkLabel(
+                row,
+                text=text,
+                font=(FONT_FAMILY, 13, "bold"),
+                text_color=COLORS["text_main"],
+            ).pack(side="left", padx=12, pady=10)
 
     def build_calendar_data():
         daily_totals = {}
@@ -827,6 +1107,21 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         border_color=COLORS["border"],
     )
 
+    daily_report_button = ctk.CTkButton(
+        header,
+        text="Daily Report",
+        command=show_daily_report_window,
+        width=116,
+        height=38,
+        corner_radius=14,
+        font=(FONT_FAMILY, 14, "bold"),
+        fg_color="#EFF6FF",
+        hover_color="#EFF6FF",
+        text_color=COLORS["primary_blue"],
+        border_width=1,
+        border_color="#BFDBFE",
+    )
+
     timer = ctk.CTkLabel(
         header,
         text="00:00:00",
@@ -851,6 +1146,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     )
     today_timer.pack(side="right", padx=(0, 10))
     calendar_button.pack(side="right", padx=(0, 10))
+    daily_report_button.pack(side="right", padx=(0, 10))
 
     content = ctk.CTkFrame(root, fg_color="transparent")
     content.pack(fill="both", expand=True)
@@ -990,6 +1286,27 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     )
     focus_time_value.pack(anchor="w", padx=16, pady=(4, 18))
 
+    daily_score_card = _create_card(side_panel, fill="x", pady=(0, 14))
+    ctk.CTkLabel(
+        daily_score_card,
+        text="Daily Study Score",
+        font=FONT_SECTION,
+        text_color=COLORS["text_sub"],
+    ).pack(anchor="w", padx=22, pady=(18, 0))
+    daily_score_value = ctk.CTkLabel(
+        daily_score_card,
+        text="--",
+        font=(FONT_FAMILY, 38, "bold"),
+        text_color=COLORS["text_main"],
+    )
+    daily_score_value.pack(anchor="w", padx=22, pady=(4, 4))
+    daily_score_detail = ctk.CTkLabel(
+        daily_score_card,
+        text="Focus --  Time --  Vision --",
+        font=(FONT_FAMILY, 12, "bold"),
+        text_color=COLORS["text_sub"],
+    )
+    daily_score_detail.pack(anchor="w", padx=22, pady=(0, 18))
 
     feedback_card = _create_card(side_panel, fill="both", expand=True)
     ctk.CTkLabel(feedback_card, text="Feedback", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
@@ -1047,6 +1364,11 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                     camera_state.configure(text=data["camera_state"])
                     if "is_running" in data:
                         is_studying["value"] = bool(data["is_running"])
+                        latest_stats["value"] = {
+                            **latest_stats["value"],
+                            "is_running": is_studying["value"],
+                        }
+                        daily_score_cache["updated_at"] = 0
                         start_button.configure(
                             text="학습 중지" if is_studying["value"] else "학습 시작",
                             fg_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
@@ -1075,6 +1397,21 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 daily_value.configure(text=_format_seconds(today_seconds))
                 focused_time = stats.get("focused_time", 0)
                 focus_time_value.configure(text=_format_seconds(focused_time))
+                daily_report = current_daily_score()
+                daily_score_color = COLORS["normal"] if daily_report["daily_score"] >= 75 else COLORS["caution"]
+                if daily_report["daily_score"] < 50:
+                    daily_score_color = COLORS["danger"]
+                daily_score_value.configure(
+                    text=f"{daily_report['daily_score']:.1f}",
+                    text_color=daily_score_color,
+                )
+                daily_score_detail.configure(
+                    text=(
+                        f"Focus {daily_report['focus_part']:.1f}"
+                        f"  Time {daily_report['time_part']:.1f}"
+                        f"  Vision {daily_report['quality_part']:.1f}"
+                    )
+                )
                 is_studying["value"] = bool(stats.get("is_running", True))
                 start_button.configure(
                     text="학습 중지" if is_studying["value"] else "학습 시작",
