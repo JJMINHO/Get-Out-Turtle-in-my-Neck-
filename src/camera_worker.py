@@ -331,8 +331,25 @@ class CameraWorker:
                 avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
                 avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
 
-                local_feedback = self._posture_feedback(p_status, slouch_risk)
-                ai_feedback = self.ai_feedback_coach.get_feedback(
+                posture_feedback = self._posture_feedback(
+                    p_status,
+                    int(p_score),
+                    face_shoulder_delta,
+                    slouch_delta,
+                    slouch_risk,
+                )
+                local_feedback = self._combined_feedback(
+                    posture_feedback,
+                    int(p_score),
+                    int(f_score),
+                    f_status,
+                    study_state,
+                    gaze_zone,
+                    self.current_focus_drop_seconds,
+                    face_detected,
+                    drowsy,
+                )
+                schedule_feedback = self.ai_feedback_coach.get_feedback(
                     {
                         "today_time_text": self._format_seconds(session_snapshot["today_seconds"]),
                         "session_time_text": time_str,
@@ -350,10 +367,10 @@ class CameraWorker:
                         "consecutive_distracted_seconds": self.current_focus_drop_seconds,
                         "consecutive_bad_posture_seconds": self.current_bad_posture_seconds,
                         "consecutive_drowsy_seconds": self.current_drowsy_seconds,
-                        "target_study_time_hours": config.TARGET_STUDY_TIME_HOURS,
                     },
-                    local_feedback,
+                    "",
                 )
+                final_feedback = self._merge_feedback(local_feedback, schedule_feedback)
 
                 stats = {
                     "time_str": time_str,
@@ -371,7 +388,7 @@ class CameraWorker:
                     "focus_score": int(f_score),
                     "focus_status": f_status,
                     "gaze_zone": gaze_zone,
-                    "feedback": ai_feedback,
+                    "feedback": final_feedback,
                     "focused_time": self.focused_time,
                     "max_focused_time": session_snapshot["max_focused_streak_seconds"],
                     "good_posture_time": self.good_posture_time,
@@ -433,20 +450,98 @@ class CameraWorker:
     def handle_dashboard_commands(self):
         self._handle_dashboard_commands()
 
-    def _posture_feedback(self, posture_status, slouch_risk="Low"):
+    def _posture_feedback(
+        self,
+        posture_status,
+        posture_score=0,
+        head_offset_delta=0.0,
+        shoulder_drop_delta=0.0,
+        slouch_risk="Low",
+    ):
         if str(posture_status).startswith("Calibrating"):
             return "정자세를 유지하며 기준 자세를 측정하고 있습니다."
+        if posture_status == "No Pose":
+            return "상체가 카메라에 보이도록 앉아주세요."
+        if shoulder_drop_delta >= config.SLOUCH_DROP_BAD:
+            return f"어깨가 기준보다 많이 내려갔습니다. 어깨 하강 지표 {shoulder_drop_delta:.2f}라서 허리를 세우고 가슴을 살짝 펴주세요."
+        if head_offset_delta >= config.FACE_SHOULDER_RATIO_BAD:
+            return f"머리가 앞으로 많이 나와 있습니다. 전방 이동 지표 {head_offset_delta:.2f}라서 턱을 당기고 귀를 어깨선에 맞춰주세요."
         if slouch_risk == "High":
             return "어깨선이 기준보다 많이 낮아졌습니다. 허리를 세우고 가슴을 살짝 펴주세요."
+        if head_offset_delta >= config.FACE_SHOULDER_RATIO_WARNING:
+            return f"목이 앞으로 나오는 흐름이 보입니다. 전방 이동 지표 {head_offset_delta:.2f}라서 턱을 살짝 당겨주세요."
         if slouch_risk == "Medium":
             return "어깨가 조금 내려갔습니다. 허리를 곧게 세워주세요."
         if posture_status == "Good":
-            return "현재 자세가 안정적입니다. 이 자세를 유지하세요."
+            return f"현재 자세가 안정적입니다. 자세 점수 {posture_score}점을 유지하세요."
         if posture_status == "Warning":
-            return "목이 약간 앞으로 나와 있습니다. 턱을 살짝 당겨주세요."
-        if posture_status == "No Pose":
-            return "상체가 카메라에 보이도록 앉아주세요."
-        return "거북목 위험도가 높습니다. 귀와 어깨가 일직선이 되도록 자세를 조정하세요."
+            return f"자세 점수 {posture_score}점입니다. 턱을 살짝 당기고 허리를 세워 기준 자세로 돌아오세요."
+        return f"자세 점수 {posture_score}점입니다. 귀와 어깨가 일직선이 되도록 바로 조정하세요."
+
+    def _combined_feedback(
+        self,
+        posture_feedback,
+        posture_score,
+        focus_score,
+        focus_status,
+        study_state,
+        gaze_zone,
+        consecutive_distracted_seconds,
+        face_detected,
+        drowsy,
+    ):
+        focus_feedback = self._focus_feedback(
+            focus_score,
+            focus_status,
+            study_state,
+            gaze_zone,
+            consecutive_distracted_seconds,
+            face_detected,
+            drowsy,
+        )
+
+        if focus_feedback and posture_score < config.WARNING_THRESHOLD:
+            return f"{focus_feedback} 자세도 함께 무너지고 있으니 허리를 세우고 턱을 당겨주세요."
+        if focus_feedback:
+            return focus_feedback
+        return posture_feedback
+
+    def _merge_feedback(self, local_feedback, schedule_feedback):
+        local_feedback = (local_feedback or "").strip()
+        schedule_feedback = (schedule_feedback or "").strip()
+        if not schedule_feedback:
+            return local_feedback
+        if schedule_feedback == local_feedback:
+            return local_feedback
+        if local_feedback and local_feedback in schedule_feedback:
+            return schedule_feedback
+        if schedule_feedback and schedule_feedback in local_feedback:
+            return local_feedback
+        return f"{local_feedback}\n\n{schedule_feedback}".strip()
+
+    def _focus_feedback(
+        self,
+        focus_score,
+        focus_status,
+        study_state,
+        gaze_zone,
+        consecutive_distracted_seconds,
+        face_detected,
+        drowsy,
+    ):
+        if not face_detected or study_state == "No Face":
+            return "얼굴이 화면에서 벗어났습니다. 카메라 앞에 다시 앉고 작업 화면으로 돌아오세요."
+        if drowsy or study_state == "Drowsy":
+            return "졸음 신호가 감지됩니다. 눈을 뜨고 화면을 다시 본 뒤 짧게 자세를 정리하세요."
+        if focus_status == "Away" or study_state == "Looking Away":
+            return "시선이 화면 밖으로 빠졌습니다. 지금 보던 화면으로 돌아와 한 작업만 이어가세요."
+        if consecutive_distracted_seconds >= 20:
+            return "집중이 20초 이상 흔들리고 있습니다. 알림이나 다른 창을 치우고 지금 작업 하나만 보세요."
+        if focus_status == "Distracted" or study_state == "Distracted" or focus_score < config.FOCUSED_THRESHOLD:
+            if gaze_zone in ("Left", "Right", "Up", "Down"):
+                return f"시선이 {gaze_zone} 방향으로 자주 빠집니다. 화면 중앙을 보고 다음 10분만 이어가세요."
+            return f"Focus Score가 {focus_score}점입니다. 지금은 화면 중앙을 보고 한 작업만 이어가세요."
+        return None
 
     def _format_seconds(self, seconds):
         hours, remainder = divmod(int(seconds), 3600)
@@ -464,7 +559,7 @@ class CameraWorker:
             avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
             session_snapshot = self.study_session.snapshot()
             with open(report_path, "w", encoding="utf-8") as report_file:
-                report_file.write("NeckCare Vision Session Report\n")
+                report_file.write("DeskFlow Coach Session Report\n")
                 report_file.write(f"Saved at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 report_file.write(f"Session seconds: {int(session_time)}\n")
                 report_file.write(f"Today total seconds: {int(session_snapshot['today_seconds'])}\n")
@@ -477,7 +572,7 @@ class CameraWorker:
                 report_file.write(f"Away seconds: {int(self.away_time)}\n")
                 report_file.write(f"No face seconds: {int(self.no_face_time)}\n")
                 report_file.write(f"Drowsy signal seconds: {int(self.drowsy_time)}\n")
-                report_file.write(f"Dominant study state: {session_snapshot['dominant_state']}\n")
+                report_file.write(f"Dominant work state: {session_snapshot['dominant_state']}\n")
             print(f"Session report saved: {report_path}")
         except Exception as exc:
             print(f"Error saving session report: {exc}")

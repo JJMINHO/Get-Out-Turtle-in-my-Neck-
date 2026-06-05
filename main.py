@@ -1,5 +1,5 @@
 """
-Application entry point for DeskPose Coach.
+Application entry point for DeskFlow Coach.
 """
 import sys
 

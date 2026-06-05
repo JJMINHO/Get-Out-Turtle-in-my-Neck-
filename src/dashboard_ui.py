@@ -137,7 +137,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     app = ctk.CTk()
     app.geometry("1280x840")
     app.minsize(900, 680)
-    app.title("NeckCare Vision")
+    app.title("DeskFlow Coach")
     app.configure(fg_color=COLORS["background"])
 
     def send_command(command):
@@ -187,7 +187,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             width=46,
         ).pack(side="right")
 
-    def add_quadrant_tile(parent, row, column, title, subtitle, count, color, selected=False):
+    def add_quadrant_tile(parent, row, column, title, subtitle, ratio, color, selected=False):
         tile = ctk.CTkFrame(
             parent,
             fg_color="#F8FAFC" if not selected else "#E6FFFB",
@@ -212,7 +212,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         ).pack(anchor="w", padx=14)
         ctk.CTkLabel(
             tile,
-            text=f"{count}",
+            text=_percent(ratio),
             font=(FONT_FAMILY, 24, "bold"),
             text_color=COLORS["text_main"],
         ).pack(anchor="w", padx=14, pady=(4, 12))
@@ -264,21 +264,21 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         report = current_daily_score()
 
         window = ctk.CTkToplevel(app)
-        window.title("일일 학습 리포트")
-        window.geometry("960x720")
-        window.minsize(860, 620)
+        window.title("일일 리포트")
+        window.geometry("980x760")
+        window.minsize(720, 560)
         window.configure(fg_color=COLORS["background"])
         window.transient(app)
         window.focus()
 
-        shell = ctk.CTkFrame(window, fg_color=COLORS["background"])
-        shell.pack(fill="both", expand=True, padx=26, pady=24)
+        shell = ctk.CTkScrollableFrame(window, fg_color=COLORS["background"])
+        shell.pack(fill="both", expand=True, padx=22, pady=20)
 
         header_row = ctk.CTkFrame(shell, fg_color="transparent")
         header_row.pack(fill="x", pady=(0, 18))
         ctk.CTkLabel(
             header_row,
-            text="일일 퍼포먼스 비전 리포트",
+            text="일일 리포트",
             font=(FONT_FAMILY, 26, "bold"),
             text_color=COLORS["text_main"],
         ).pack(side="left")
@@ -295,8 +295,16 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
         top = ctk.CTkFrame(shell, fg_color="transparent")
         top.pack(fill="x", pady=(0, 16))
+        top.grid_columnconfigure(0, weight=1, uniform="report-top")
+        top.grid_columnconfigure(1, weight=1, uniform="report-top")
 
-        score_card = _create_card(top, side="left", fill="both", expand=True, padx=(0, 14))
+        score_card = ctk.CTkFrame(
+            top,
+            fg_color=COLORS["card"],
+            corner_radius=18,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
         ctk.CTkLabel(
             score_card,
             text="Performance Score",
@@ -313,30 +321,49 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             text_color=score_color,
         ).pack(anchor="w", padx=22, pady=(2, 14))
 
-        parts_card = _create_card(top, side="left", fill="both", expand=True)
+        parts_card = ctk.CTkFrame(
+            top,
+            fg_color=COLORS["card"],
+            corner_radius=18,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
         ctk.CTkLabel(
             parts_card,
             text="상세 점수 구성",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 12))
-        add_metric_bar(parts_card, "집중농도", report["focus_part"], COLORS["primary_mint"], 40)
-        add_metric_bar(parts_card, "활동량", report["time_part"], COLORS["primary_blue"], 30)
-        add_metric_bar(parts_card, "비전 품질", report["quality_part"], COLORS["normal"], 30)
+        add_metric_bar(parts_card, "집중도", report["focus_part"], COLORS["primary_mint"], 40)
+        add_metric_bar(parts_card, "업무/학습량", report["time_part"], COLORS["primary_blue"], 30)
+        add_metric_bar(parts_card, "Focus & Posture", report["quality_part"], COLORS["normal"], 30)
 
         middle = ctk.CTkFrame(shell, fg_color="transparent")
         middle.pack(fill="x", pady=(0, 16))
+        middle.grid_columnconfigure(0, weight=1, uniform="report-middle")
+        middle.grid_columnconfigure(1, weight=1, uniform="report-middle")
 
-        ratio_card = _create_card(middle, side="left", fill="both", expand=True, padx=(0, 14))
+        ratio_card = ctk.CTkFrame(
+            middle,
+            fg_color=COLORS["card"],
+            corner_radius=18,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
         ctk.CTkLabel(ratio_card, text="오늘의 일일 지표", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
             anchor="w", padx=22, pady=(20, 12)
         )
         add_metric_bar(ratio_card, "집중 비율", report["focus_density"], COLORS["primary_mint"])
-        add_metric_bar(ratio_card, "목표 활동량", report["time_ratio"], COLORS["primary_blue"])
         add_metric_bar(ratio_card, "좋은 자세", report["good_posture_ratio"], COLORS["normal"])
-        add_metric_bar(ratio_card, "화면 안정성", report["stable_presence_ratio"], COLORS["caution"])
+        add_metric_bar(ratio_card, "Stay Rate", report["stable_presence_ratio"], COLORS["caution"])
 
-        quadrant_card = _create_card(middle, side="left", fill="both", expand=True)
+        quadrant_card = ctk.CTkFrame(
+            middle,
+            fg_color=COLORS["card"],
+            corner_radius=18,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
         ctk.CTkLabel(
             quadrant_card,
             text="집중도 x 자세 사분면",
@@ -344,6 +371,11 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 12))
         quadrants = report["quadrants"]
+        quadrant_total = max(sum(quadrants.values()), 1)
+        quadrant_ratios = {
+            key: value / quadrant_total
+            for key, value in quadrants.items()
+        }
         dominant_quadrant = max(quadrants.items(), key=lambda item: item[1])[0] if quadrants else "strong"
         quadrant_grid = ctk.CTkFrame(quadrant_card, fg_color="transparent")
         quadrant_grid.pack(fill="both", expand=True, padx=16, pady=(0, 18))
@@ -357,7 +389,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             0,
             "최상의 상태",
             "집중도 높음 / 자세 바름",
-            quadrants["strong"],
+            quadrant_ratios["strong"],
             COLORS["normal"],
             dominant_quadrant == "strong",
         )
@@ -367,7 +399,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             1,
             "자세 위험",
             "집중도 높음 / 자세 구부정",
-            quadrants["posture_risk"],
+            quadrant_ratios["posture_risk"],
             COLORS["caution"],
             dominant_quadrant == "posture_risk",
         )
@@ -377,7 +409,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             0,
             "집중도 위험",
             "집중도 낮음 / 자세 바름",
-            quadrants["focus_risk"],
+            quadrant_ratios["focus_risk"],
             COLORS["primary_blue"],
             dominant_quadrant == "focus_risk",
         )
@@ -387,15 +419,38 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             1,
             "이탈 및 휴식",
             "집중도 낮음 / 자세 구부정",
-            quadrants["low_quality"],
+            quadrant_ratios["low_quality"],
             COLORS["danger"],
             dominant_quadrant == "low_quality",
         )
 
+        def layout_report_cards(_event=None):
+            width = max(window.winfo_width(), 1)
+            two_columns = width >= 880
+
+            for card in (score_card, parts_card):
+                card.grid_forget()
+            for card in (ratio_card, quadrant_card):
+                card.grid_forget()
+
+            if two_columns:
+                score_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=0)
+                parts_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=0)
+                ratio_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=0)
+                quadrant_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=0)
+            else:
+                score_card.grid(row=0, column=0, sticky="nsew", padx=0, pady=(0, 12))
+                parts_card.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+                ratio_card.grid(row=0, column=0, sticky="nsew", padx=0, pady=(0, 12))
+                quadrant_card.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+
+        layout_report_cards()
+        window.bind("<Configure>", layout_report_cards)
+
         timeline_card = _create_card(shell, fill="both", expand=True)
         ctk.CTkLabel(
             timeline_card,
-            text="스터디 상태 타임라인",
+            text="작업 상태 타임라인",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(18, 10))
@@ -416,7 +471,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         if not report["events"]:
             ctk.CTkLabel(
                 timeline,
-                text="아직 기록된 study event가 없습니다.",
+                text="아직 기록된 작업 이벤트가 없습니다.",
                 font=FONT_BODY,
                 text_color=COLORS["text_sub"],
             ).pack(anchor="w", padx=14, pady=14)
@@ -445,7 +500,9 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 text=text,
                 font=(FONT_FAMILY, 13, "bold"),
                 text_color=COLORS["text_main"],
-            ).pack(side="left", padx=12, pady=10)
+                wraplength=max(window.winfo_width() - 120, 280),
+                justify="left",
+            ).pack(side="left", fill="x", expand=True, padx=12, pady=10)
 
     def build_calendar_data():
         daily_totals = {}
@@ -504,7 +561,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         selected_event_id = {"value": None}
 
         window = ctk.CTkToplevel(app)
-        window.title("DeskPose Calendar")
+        window.title("DeskFlow Calendar")
         window.geometry("1280x800")
         window.minsize(1120, 720)
         window.configure(fg_color=COLORS["background"])
@@ -527,7 +584,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         ).pack(anchor="w")
         ctk.CTkLabel(
             title_area,
-            text="학습일은 05:00부터 다음날 04:59까지입니다.",
+            text="하루 기록은 05:00부터 다음날 04:59까지 이어집니다.",
             font=FONT_BODY,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", pady=(2, 0))
@@ -1159,13 +1216,13 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     ctk.CTkLabel(
         title_box,
-        text="NeckCare Vision",
+        text="DeskFlow Coach",
         font=FONT_TITLE,
         text_color=COLORS["text_main"],
     ).pack(anchor="w")
     ctk.CTkLabel(
         title_box,
-        text="Real-time Forward Head Posture Analyzer",
+        text="Posture, Focus & Work Rhythm Dashboard",
         font=FONT_SUBTITLE,
         text_color=COLORS["text_sub"],
     ).pack(anchor="w", pady=(2, 0))
@@ -1187,7 +1244,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     daily_report_button = ctk.CTkButton(
         header,
-        text="Daily Report",
+        text="일일 리포트",
         command=show_daily_report_window,
         width=116,
         height=38,
@@ -1261,7 +1318,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             side_panel.pack_forget()
             camera_card.pack(side="left", fill="both", expand=True, padx=(0, 18))
             side_panel.configure(width=520)
-            side_panel.pack(side="right", fill="both")
+            side_panel.pack(side="right", fill="both", expand=True)
             app.geometry("1280x840")
 
     camera_view_switch = ctk.CTkSwitch(
@@ -1296,7 +1353,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     video_label.pack(expand=True, fill="both", padx=12, pady=12)
 
     side_panel = ctk.CTkScrollableFrame(content, fg_color="transparent", width=520)
-    side_panel.pack(side="right", fill="both")
+    side_panel.pack(side="right", fill="both", expand=True)
 
     score_row = ctk.CTkFrame(side_panel, fg_color="transparent")
     score_row.pack(fill="x", pady=(0, 14))
@@ -1381,13 +1438,14 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_score_value.pack(anchor="w", padx=22, pady=(4, 4))
     daily_score_detail = ctk.CTkLabel(
         daily_score_card,
-        text="집중 --  활동량 --  자세 --",
+        text="집중 --  업무/학습량 --  자세 --",
         font=(FONT_FAMILY, 12, "bold"),
         text_color=COLORS["text_sub"],
     )
     daily_score_detail.pack(anchor="w", padx=22, pady=(0, 18))
 
     feedback_card = _create_card(side_panel, fill="both", expand=True)
+    feedback_card.configure(height=150)
     ctk.CTkLabel(feedback_card, text="Feedback", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
         anchor="w", padx=22, pady=(20, 8)
     )
@@ -1396,10 +1454,16 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         text="카메라를 시작하면 자세 피드백이 표시됩니다.",
         font=(FONT_FAMILY, 15, "bold"),
         text_color=COLORS["text_main"],
-        wraplength=290,
+        wraplength=420,
         justify="left",
     )
-    feedback_text.pack(anchor="w", padx=22, pady=(0, 20))
+    feedback_text.pack(anchor="nw", fill="both", expand=True, padx=22, pady=(0, 20))
+
+    def resize_feedback_text(_event=None):
+        width = max(feedback_card.winfo_width() - 44, 240)
+        feedback_text.configure(wraplength=width)
+
+    feedback_card.bind("<Configure>", resize_feedback_text)
 
     controls = ctk.CTkFrame(root, fg_color="transparent")
     controls.pack(fill="x", pady=(18, 0))
@@ -1504,7 +1568,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 daily_score_detail.configure(
                     text=(
                         f"집중 {daily_report['focus_part']:.1f}"
-                        f"  활동량 {daily_report['time_part']:.1f}"
+                        f"  업무/학습량 {daily_report['time_part']:.1f}"
                         f"  자세 {daily_report['quality_part']:.1f}"
                     )
                 )

@@ -1,5 +1,5 @@
 """
-Build a lightweight text summary from DeskPose CSV logs.
+Build a lightweight text summary from DeskFlow CSV logs.
 """
 import os
 
@@ -29,7 +29,7 @@ class SessionSummary:
         away_ratio = self._ratio(frame_log, "gaze_zone", "Away")
 
         lines = [
-            "DeskPose Session Summary",
+            "DeskFlow Session Summary",
             "",
             f"Average posture score: {avg_posture:.1f}",
             f"Average focus score: {avg_focus:.1f}",
@@ -48,14 +48,14 @@ class SessionSummary:
                 bad_posture_seconds = today_log["bad_posture_seconds"].sum()
                 lines.extend([
                     "",
-                    "Today's study record:",
-                    f"- Total study time: {self._format_seconds(today_seconds)}",
+                    "Today's work record:",
+                    f"- Total work time: {self._format_seconds(today_seconds)}",
                     f"- Focused time: {self._format_seconds(focused_seconds)}",
                     f"- Bad posture time: {self._format_seconds(bad_posture_seconds)}",
                 ])
 
         if event_log is not None and not event_log.empty:
-            lines.extend(["", "Top study events:"])
+            lines.extend(["", "Top work events:"])
             event_durations = event_log.groupby("event_type")["duration"].sum().sort_values(ascending=False)
             for event_type, duration in event_durations.head(5).items():
                 lines.append(f"- {event_type}: {duration:.1f}s")

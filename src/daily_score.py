@@ -1,5 +1,5 @@
 """
-Calculate daily study performance scores from session and vision logs.
+Calculate daily performance scores from session and vision logs.
 """
 import csv
 import os
@@ -9,16 +9,7 @@ import src.config as config
 from src.study_session import study_day_string
 
 
-DEFAULT_TARGET_STUDY_SECONDS = 4 * 60 * 60
-
-
 class DailyScoreCalculator:
-    def __init__(self, target_study_seconds=None):
-        self.target_study_seconds = int(
-            target_study_seconds
-            or (getattr(config, "TARGET_STUDY_TIME_HOURS", 4.0) * 3600)
-        )
-
     def calculate(self, day=None, current_stats=None):
         study_day = day or study_day_string()
         summary = self._read_daily_session_summary(study_day)
@@ -37,7 +28,7 @@ class DailyScoreCalculator:
         drowsy_seconds = summary["drowsy_seconds"]
 
         focus_density = self._ratio(focused_seconds, study_seconds)
-        time_ratio = min(self._ratio(study_seconds, self.target_study_seconds), 1.0)
+        activity_ratio = self._activity_ratio(study_seconds)
         good_posture_ratio = self._ratio(good_posture_seconds, study_seconds)
         stable_presence_ratio = max(
             0.0,
@@ -45,7 +36,7 @@ class DailyScoreCalculator:
         )
 
         focus_part = focus_density * 40
-        time_part = time_ratio * 30
+        time_part = activity_ratio * 30
         quality_ratio = (
             0.45 * focus_density
             + 0.35 * good_posture_ratio
@@ -61,13 +52,13 @@ class DailyScoreCalculator:
             "time_part": round(time_part, 1),
             "quality_part": round(quality_part, 1),
             "focus_density": round(focus_density, 3),
-            "time_ratio": round(time_ratio, 3),
+            "time_ratio": round(activity_ratio, 3),
+            "activity_ratio": round(activity_ratio, 3),
             "vision_quality_ratio": round(quality_ratio, 3),
             "good_posture_ratio": round(good_posture_ratio, 3),
             "stable_presence_ratio": round(stable_presence_ratio, 3),
             "study_seconds": int(study_seconds),
             "focused_seconds": int(focused_seconds),
-            "target_study_seconds": self.target_study_seconds,
             "away_seconds": int(away_seconds),
             "no_face_seconds": int(no_face_seconds),
             "drowsy_seconds": int(drowsy_seconds),
@@ -182,6 +173,11 @@ class DailyScoreCalculator:
         if denominator <= 0:
             return 0.0
         return max(0.0, min(float(numerator) / float(denominator), 1.0))
+
+    def _activity_ratio(self, seconds):
+        # Soft saturation keeps longer sessions meaningful without showing a fixed target.
+        minutes = max(0.0, float(seconds) / 60.0)
+        return min(minutes / 240.0, 1.0)
 
     def _safe_int(self, value):
         try:

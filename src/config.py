@@ -19,7 +19,7 @@ def load_dotenv():
 
 load_dotenv()
 
-# Configuration values used across the DeskPose Coach application.
+# Configuration values used across the DeskFlow Coach application.
 
 
 CAMERA_INDEX = 0
@@ -78,18 +78,14 @@ STUDY_EVENTS_CSV_PATH = "outputs/study_events.csv"
 DAILY_SESSIONS_CSV_PATH = "outputs/daily_sessions.csv"
 CALENDAR_EVENTS_CSV_PATH = "outputs/calendar_events.csv"
 STUDY_EVENT_MIN_DURATION_SECONDS = 2.0
-# A study day runs from 05:00 through 04:59 the next calendar day.
+# A work day runs from 05:00 through 04:59 the next calendar day.
 STUDY_DAY_START_HOUR = 5
 
 OPENAI_MODEL = "gpt-5.4-mini"
 GEMINI_MODEL = "gemini-2.0-flash"
-AI_FEEDBACK_COOLDOWN_SECONDS = 180
-AI_FEEDBACK_TRIGGER_COOLDOWN_SECONDS = 60
+AI_FEEDBACK_COOLDOWN_SECONDS = 600
+AI_FEEDBACK_TRIGGER_COOLDOWN_SECONDS = 300
 AI_FEEDBACK_TIMEOUT_SECONDS = 8
-DAILY_TARGET_STUDY_SECONDS = 4 * 60 * 60
-TARGET_STUDY_TIME_HOURS = 4.0
-
-
 ENABLE_BAD_POSTURE_SOUND = True
 BAD_POSTURE_SOUND_AFTER_SECONDS = 5
 BAD_POSTURE_SOUND_COOLDOWN_SECONDS = 60
@@ -107,10 +103,10 @@ DROWSY_SOUND_PATH = "/System/Library/Sounds/Sosumi.aiff"
 DROWSY_SOUND_REPEAT_COUNT = 3
 DROWSY_SOUND_REPEAT_GAP_SECONDS = 0.35
 
-DEBUG_WINDOW_NAME = "DeskPose Coach Debug"
+DEBUG_WINDOW_NAME = "DeskFlow Coach Debug"
 DEBUG_PANEL_WIDTH = 380
 
-DASHBOARD_WINDOW_NAME = "DeskPose Dashboard"
+DASHBOARD_WINDOW_NAME = "DeskFlow Dashboard"
 DASHBOARD_PANEL_WIDTH = 350
 
 # MediaPipe Tasks model assets (download these into assets/).
