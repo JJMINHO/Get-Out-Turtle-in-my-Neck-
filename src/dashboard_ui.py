@@ -80,6 +80,17 @@ def _format_hours_minutes(seconds):
     return f"{hours:02d}:{minutes:02d}"
 
 
+def _fit_image_size(container, frame_width, frame_height):
+    """Return an image size that fits the current dashboard camera area."""
+    container_width = max(container.winfo_width() - 24, 320)
+    container_height = max(container.winfo_height() - 24, 240)
+    if frame_width <= 0 or frame_height <= 0:
+        return int(container_width), int(container_height)
+
+    scale = min(container_width / frame_width, container_height / frame_height)
+    return max(1, int(frame_width * scale)), max(1, int(frame_height * scale))
+
+
 def _safe_int(value):
     try:
         return int(float(value))
@@ -267,7 +278,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         header_row.pack(fill="x", pady=(0, 18))
         ctk.CTkLabel(
             header_row,
-            text="일일 학습 비전 리포트",
+            text="일일 퍼포먼스 비전 리포트",
             font=(FONT_FAMILY, 26, "bold"),
             text_color=COLORS["text_main"],
         ).pack(side="left")
@@ -288,7 +299,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         score_card = _create_card(top, side="left", fill="both", expand=True, padx=(0, 14))
         ctk.CTkLabel(
             score_card,
-            text="일일 학습 점수",
+            text="Performance Score",
             font=FONT_SECTION,
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 0))
@@ -310,7 +321,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             text_color=COLORS["text_sub"],
         ).pack(anchor="w", padx=22, pady=(20, 12))
         add_metric_bar(parts_card, "집중농도", report["focus_part"], COLORS["primary_mint"], 40)
-        add_metric_bar(parts_card, "학습량", report["time_part"], COLORS["primary_blue"], 30)
+        add_metric_bar(parts_card, "활동량", report["time_part"], COLORS["primary_blue"], 30)
         add_metric_bar(parts_card, "비전 품질", report["quality_part"], COLORS["normal"], 30)
 
         middle = ctk.CTkFrame(shell, fg_color="transparent")
@@ -321,7 +332,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             anchor="w", padx=22, pady=(20, 12)
         )
         add_metric_bar(ratio_card, "집중 비율", report["focus_density"], COLORS["primary_mint"])
-        add_metric_bar(ratio_card, "목표 학습량", report["time_ratio"], COLORS["primary_blue"])
+        add_metric_bar(ratio_card, "목표 활동량", report["time_ratio"], COLORS["primary_blue"])
         add_metric_bar(ratio_card, "좋은 자세", report["good_posture_ratio"], COLORS["normal"])
         add_metric_bar(ratio_card, "화면 안정성", report["stable_presence_ratio"], COLORS["caution"])
 
@@ -634,9 +645,12 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             height=38,
             font=FONT_BODY,
             placeholder_text="YYYY-MM-DD",
+            state="readonly",
         )
-        date_entry.insert(0, active_study_day)
         date_entry.pack(fill="x", pady=(0, 6))
+        date_entry.configure(state="normal")
+        date_entry.insert(0, active_study_day)
+        date_entry.configure(state="readonly")
 
         date_picker_visible = {"value": False}
         date_picker = ctk.CTkScrollableFrame(
@@ -659,8 +673,17 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         select_row = ctk.CTkFrame(form_card, fg_color="transparent")
         select_row.pack(fill="x", pady=(0, 8))
 
+        type_field = ctk.CTkFrame(select_row, fg_color="transparent")
+        type_field.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkLabel(
+            type_field,
+            text="종류",
+            font=(FONT_FAMILY, 12, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", pady=(0, 4))
+
         type_menu = ctk.CTkOptionMenu(
-            select_row,
+            type_field,
             values=["none", "exam", "deadline", "project", "assignment"],
             width=180,
             height=38,
@@ -671,10 +694,19 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             font=FONT_BODY,
         )
         type_menu.set("none")
-        type_menu.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        type_menu.pack(fill="x")
+
+        priority_field = ctk.CTkFrame(select_row, fg_color="transparent")
+        priority_field.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(
+            priority_field,
+            text="중요도",
+            font=(FONT_FAMILY, 12, "bold"),
+            text_color=COLORS["text_main"],
+        ).pack(anchor="w", pady=(0, 4))
 
         priority_menu = ctk.CTkOptionMenu(
-            select_row,
+            priority_field,
             values=["high", "normal", "low"],
             width=130,
             height=38,
@@ -685,7 +717,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             font=FONT_BODY,
         )
         priority_menu.set("normal")
-        priority_menu.pack(side="left")
+        priority_menu.pack(fill="x")
 
         action_row = ctk.CTkFrame(form_card, fg_color="transparent")
         action_row.pack(fill="x", pady=(2, 10))
@@ -774,14 +806,21 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 show_date_picker()
 
         date_entry.bind("<Button-1>", toggle_date_picker)
+        date_entry.bind("<Key>", lambda _event: "break")
         try:
             date_entry._entry.bind("<Button-1>", toggle_date_picker)
+            date_entry._entry.bind("<Key>", lambda _event: "break")
         except AttributeError:
             pass
 
-        def select_date(day_key):
+        def set_selected_date(day_key):
+            date_entry.configure(state="normal")
             date_entry.delete(0, "end")
             date_entry.insert(0, day_key)
+            date_entry.configure(state="readonly")
+
+        def select_date(day_key):
+            set_selected_date(day_key)
             form_status.configure(text="날짜 선택됨", text_color=COLORS["primary_blue"])
             render_date_picker()
             hide_date_picker()
@@ -793,8 +832,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 clear_event_form()
                 return
 
-            date_entry.delete(0, "end")
-            date_entry.insert(0, event["date"])
+            set_selected_date(event["date"])
             title_entry.delete(0, "end")
             title_entry.insert(0, event["title"])
             type_menu.set(event["type"])
@@ -986,6 +1024,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             for child in calendar_frame.winfo_children():
                 child.destroy()
             render_date_picker()
+            day_score_cache = {}
 
             year = visible_month["year"]
             month = visible_month["month"]
@@ -1022,8 +1061,15 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                     is_current_month = day_date.month == month
                     is_today = day_key == study_day_string()
                     totals = daily_totals.get(day_key, {"study": 0, "focus": 0})
+                    if day_key not in day_score_cache:
+                        day_score_cache[day_key] = daily_score_calculator.calculate(
+                            day_key,
+                            latest_stats["value"] if day_key == study_day_string() else None,
+                        )
+                    calendar_score = day_score_cache[day_key]
                     events = events_by_day.get(day_key, [])
-                    has_content = totals["study"] > 0 or totals["focus"] > 0 or bool(events)
+                    has_score = calendar_score["study_seconds"] > 0
+                    has_content = totals["study"] > 0 or totals["focus"] > 0 or has_score or bool(events)
 
                     cell = ctk.CTkFrame(
                         calendar_frame,
@@ -1045,7 +1091,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                     if totals["study"] > 0:
                         ctk.CTkLabel(
                             cell,
-                            text=f"학습 {_format_hours_minutes(totals['study'])}",
+                            text=f"작업 {_format_hours_minutes(totals['study'])}",
                             font=(FONT_FAMILY, 12, "bold"),
                             text_color=COLORS["primary_blue"],
                         ).pack(anchor="w", padx=10)
@@ -1055,6 +1101,16 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                             text=f"집중 {_format_hours_minutes(totals['focus'])}",
                             font=(FONT_FAMILY, 12, "bold"),
                             text_color=COLORS["primary_mint"],
+                        ).pack(anchor="w", padx=10)
+                    if has_score:
+                        score_color = COLORS["normal"] if calendar_score["daily_score"] >= 75 else COLORS["caution"]
+                        if calendar_score["daily_score"] < 50:
+                            score_color = COLORS["danger"]
+                        ctk.CTkLabel(
+                            cell,
+                            text=f"Score {calendar_score['daily_score']:.1f}",
+                            font=(FONT_FAMILY, 12, "bold"),
+                            text_color=score_color,
                         ).pack(anchor="w", padx=10)
 
                     for event in events[:2]:
@@ -1178,12 +1234,13 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     camera_header = ctk.CTkFrame(camera_card, fg_color="transparent")
     camera_header.pack(fill="x", padx=22, pady=(18, 8))
 
-    ctk.CTkLabel(
+    live_camera_label = ctk.CTkLabel(
         camera_header,
-        text="● Live Camera",
+        text="Camera Ready",
         font=FONT_SECTION,
-        text_color=COLORS["normal"],
-    ).pack(side="left")
+        text_color=COLORS["text_sub"],
+    )
+    live_camera_label.pack(side="left")
 
     camera_view_enabled = ctk.BooleanVar(value=True)
 
@@ -1270,7 +1327,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     focus_value.pack(anchor="w", padx=16, pady=(4, 18))
 
     study_card = _create_card(side_panel, fill="x", pady=(0, 14))
-    ctk.CTkLabel(study_card, text="Study Session", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+    ctk.CTkLabel(study_card, text="Focus Session", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
         anchor="w", padx=22, pady=(18, 0)
     )
     study_state = ctk.CTkLabel(
@@ -1285,7 +1342,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_row.pack(fill="x", pady=(0, 14))
 
     daily_card = _create_card(daily_row, side="left", fill="both", expand=True, padx=(0, 7))
-    ctk.CTkLabel(daily_card, text="학습 시간", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
+    ctk.CTkLabel(daily_card, text="작업 시간", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
         anchor="w", padx=16, pady=(18, 0)
     )
     daily_value = ctk.CTkLabel(
@@ -1311,7 +1368,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_score_card = _create_card(side_panel, fill="x", pady=(0, 14))
     ctk.CTkLabel(
         daily_score_card,
-        text="일일 학습 점수",
+        text="Performance Score",
         font=FONT_SECTION,
         text_color=COLORS["text_sub"],
     ).pack(anchor="w", padx=22, pady=(18, 0))
@@ -1324,7 +1381,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     daily_score_value.pack(anchor="w", padx=22, pady=(4, 4))
     daily_score_detail = ctk.CTkLabel(
         daily_score_card,
-        text="집중 --  학습량 --  자세 --",
+        text="집중 --  활동량 --  자세 --",
         font=(FONT_FAMILY, 12, "bold"),
         text_color=COLORS["text_sub"],
     )
@@ -1349,7 +1406,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     start_button = _make_button(
         controls,
-        "학습 시작",
+        "시작",
         toggle_study,
         COLORS["primary_mint"],
         "#FFFFFF",
@@ -1392,10 +1449,26 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                         }
                         daily_score_cache["updated_at"] = 0
                         start_button.configure(
-                            text="학습 중지" if is_studying["value"] else "학습 시작",
+                            text="중지" if is_studying["value"] else "시작",
                             fg_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
                             hover_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
                         )
+                        live_camera_label.configure(
+                            text="● Live Camera" if is_studying["value"] else "Camera Ready",
+                            text_color=COLORS["normal"] if is_studying["value"] else COLORS["text_sub"],
+                        )
+                        if camera_view_enabled.get():
+                            camera_message = data["camera_state"]
+                            if is_studying["value"] and camera_message == "Starting":
+                                camera_message = "Starting camera..."
+                            elif camera_message == "Camera unavailable":
+                                camera_message = "Camera unavailable. Check macOS Camera permission."
+                            elif not is_studying["value"]:
+                                camera_message = "Waiting for camera..."
+                            video_label.configure(
+                                image=None,
+                                text=camera_message,
+                            )
                     app.after(33, update)
                     return
 
@@ -1406,7 +1479,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 if frame is not None:
                     if camera_view_enabled.get():
                         img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                        latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=(800, 570))
+                        display_size = _fit_image_size(video_shell, img.width, img.height)
+                        latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=display_size)
                         video_label.configure(image=latest_image["value"], text="")
                     else:
                         video_label.configure(image=None, text="Camera view hidden")
@@ -1430,15 +1504,19 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                 daily_score_detail.configure(
                     text=(
                         f"집중 {daily_report['focus_part']:.1f}"
-                        f"  학습량 {daily_report['time_part']:.1f}"
+                        f"  활동량 {daily_report['time_part']:.1f}"
                         f"  자세 {daily_report['quality_part']:.1f}"
                     )
                 )
                 is_studying["value"] = bool(stats.get("is_running", True))
                 start_button.configure(
-                    text="학습 중지" if is_studying["value"] else "학습 시작",
+                    text="중지" if is_studying["value"] else "시작",
                     fg_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
                     hover_color=COLORS["danger"] if is_studying["value"] else COLORS["primary_mint"],
+                )
+                live_camera_label.configure(
+                    text="● Live Camera" if is_studying["value"] else "Camera Ready",
+                    text_color=COLORS["normal"] if is_studying["value"] else COLORS["text_sub"],
                 )
 
                 posture_score = int(stats.get("posture_score", stats.get("avg_p", 0)))

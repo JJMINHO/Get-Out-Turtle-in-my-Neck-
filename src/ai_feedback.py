@@ -1,5 +1,5 @@
 """
-Gemini-powered coach feedback for the dashboard feedback card.
+AI-powered coach feedback for the dashboard feedback card.
 """
 import csv
 import json
@@ -15,8 +15,10 @@ import src.config as config
 
 class AiFeedbackCoach:
     def __init__(self):
-        self.api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        self.model = os.environ.get("GEMINI_MODEL", config.GEMINI_MODEL).strip()
+        self.openai_api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        self.openai_model = os.environ.get("OPENAI_MODEL", config.OPENAI_MODEL).strip()
+        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        self.gemini_model = os.environ.get("GEMINI_MODEL", config.GEMINI_MODEL).strip()
         self.cooldown_seconds = int(getattr(config, "AI_FEEDBACK_COOLDOWN_SECONDS", 180))
         self.trigger_cooldown_seconds = int(getattr(config, "AI_FEEDBACK_TRIGGER_COOLDOWN_SECONDS", 60))
         self.timeout_seconds = int(getattr(config, "AI_FEEDBACK_TIMEOUT_SECONDS", 8))
@@ -26,10 +28,12 @@ class AiFeedbackCoach:
         self.lock = threading.Lock()
 
     def get_feedback(self, context, fallback):
-        if not self.api_key:
-            self.api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not self.openai_api_key:
+            self.openai_api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not self.gemini_api_key:
+            self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-        if not self.api_key:
+        if not self.openai_api_key and not self.gemini_api_key:
             return fallback
 
         now = time.time()
@@ -92,7 +96,16 @@ class AiFeedbackCoach:
     def _request_feedback(self, context, fallback, upcoming_events):
         try:
             prompt = self._build_prompt(context, upcoming_events)
-            feedback = self._call_gemini(prompt)
+            if self.openai_api_key:
+                try:
+                    feedback = self._call_openai(prompt)
+                except Exception as exc:
+                    if not self.gemini_api_key:
+                        raise
+                    print(f"OpenAI feedback unavailable; trying Gemini fallback. Error: {exc}")
+                    feedback = self._call_gemini(prompt)
+            else:
+                feedback = self._call_gemini(prompt)
             cleaned_feedback = self._clean_feedback(feedback)
             if cleaned_feedback:
                 with self.lock:
@@ -107,16 +120,28 @@ class AiFeedbackCoach:
         event_text = self._format_events(upcoming_events)
         target_hours = context.get("target_study_time_hours", 4.0)
         return f"""
-You are a strict but helpful Korean study coach inside a posture/focus dashboard.
-Write 1-2 short Korean sentences.
-Tone: firm, direct, motivating, slightly tough ("채찍질 느낌").
-Do not insult the user. Do not shame their identity. Do not mention medical claims.
+You write Korean feedback for a posture/focus dashboard.
+Write exactly 1 or 2 short Korean sentences in polite 존댓말.
+Tone: calm, direct, practical, and slightly firm.
+Sound like a real productivity coach, not a chatbot, teacher, drill sergeant, or motivational speaker.
+Do not insult, shame, tease, threaten, exaggerate, role-play, use slang, use emojis, or mention medical claims.
+Do not use labels like "피드백:", "코치:", "주의:", or markdown.
 Include one immediate action the user should take now.
+
+Good examples:
+- 지금은 시선을 다시 화면으로 돌리고 10분만 이어가세요. 자세는 턱을 살짝 당긴 상태로 잡으면 충분합니다.
+- 마감이 가까우니 지금은 딴짓을 줄이고 한 작업만 끝내세요. 25분 동안 화면에서 시선을 떼지 않는 걸 목표로 가겠습니다.
+- 오늘 작업 시간이 아직 부족합니다. 자세를 바로 세우고 다음 15분은 끊지 말고 채우세요.
+
+Avoid these patterns:
+- Panic or doom warnings.
+- Comments about the user's personality or identity.
+- Self-introductions, labels, markdown, or dramatic slogans.
 
 Current study data:
 - Study day starts at 05:00.
-- Today's target study time: {target_hours} hours
-- Today's actual study time: {context.get("today_time_text")}
+- Today's target work/study time: {target_hours} hours
+- Today's actual work/study time: {context.get("today_time_text")}
 - Current session time: {context.get("session_time_text")}
 - Posture score: {context.get("posture_score")} / 100 ({context.get("posture_status")})
 - Focus score: {context.get("focus_score")} / 100 ({context.get("focus_status")})
@@ -133,8 +158,43 @@ Upcoming exams, deadlines, or projects:
 Return only the feedback text.
 """.strip()
 
+    def _call_openai(self, prompt):
+        body = {
+            "model": self.openai_model,
+            "instructions": (
+                "Write natural Korean feedback for a webcam-based posture and focus dashboard. "
+                "Use polite 존댓말, stay concise, practical, and slightly firm. "
+                "Return only the feedback sentence or sentences."
+            ),
+            "input": prompt,
+            "max_output_tokens": 120,
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.openai_api_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            response_body = response.read().decode("utf-8")
+
+        payload = json.loads(response_body)
+        output_text = payload.get("output_text")
+        if output_text:
+            return output_text.strip()
+
+        text_parts = []
+        for output_item in payload.get("output", []):
+            for content_item in output_item.get("content", []):
+                if content_item.get("type") in ("output_text", "text"):
+                    text_parts.append(content_item.get("text", ""))
+        return "\n".join(text_parts).strip()
+
     def _call_gemini(self, prompt):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent"
         body = {
             "contents": [
                 {
@@ -144,7 +204,7 @@ Return only the feedback text.
                 }
             ],
             "generationConfig": {
-                "temperature": 0.8,
+                "temperature": 0.45,
                 "maxOutputTokens": 120,
             },
         }
@@ -153,7 +213,7 @@ Return only the feedback text.
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key,
+                "x-goog-api-key": self.gemini_api_key,
             },
             method="POST",
         )
@@ -234,6 +294,10 @@ Return only the feedback text.
 
     def _clean_feedback(self, feedback):
         cleaned = " ".join(feedback.split())
-        if len(cleaned) > 180:
-            cleaned = cleaned[:177].rstrip() + "..."
+        for prefix in ("피드백:", "코치:", "주의:", "조언:", "Feedback:", "Coach:"):
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+        cleaned = cleaned.strip("\"'“”‘’")
+        if len(cleaned) > 140:
+            cleaned = cleaned[:137].rstrip() + "..."
         return cleaned
