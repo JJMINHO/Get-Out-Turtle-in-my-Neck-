@@ -235,6 +235,43 @@ GEMINI_MODEL=gemini-2.0-flash
 
 ---
 
+## macOS 앱 번들 빌드
+
+PyInstaller로 `.app` 번들을 만들 수 있습니다.
+
+```bash
+./scripts/build_macos_app.sh
+```
+
+빌드 결과:
+
+```text
+dist/DeskFlow Coach.app
+```
+
+배포 앱은 분석 로그와 일정 데이터를 다음 위치에 저장합니다.
+
+```text
+~/Library/Application Support/DeskFlow Coach
+```
+
+배포 앱에서 API 키를 사용하려면 다음 파일을 만들 수 있습니다.
+
+```text
+~/Library/Application Support/DeskFlow Coach/.env
+```
+
+예시:
+
+```text
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.4-mini
+```
+
+`.env` 파일과 실제 API 키는 앱 번들 또는 저장소에 포함하지 마세요.
+
+---
+
 ## 캘린더 일정 데이터
 
 일정은 다음 CSV에 저장됩니다.

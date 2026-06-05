@@ -1642,6 +1642,7 @@ def run_dashboard_app(stop_worker_on_close=True):
     worker.show_dashboard = True
     worker.dashboard_queue = data_queue
     worker.dashboard_command_queue = command_queue
+    worker.start()
 
     def poll_commands():
         worker.handle_dashboard_commands()

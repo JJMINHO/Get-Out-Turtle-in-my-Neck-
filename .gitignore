@@ -23,6 +23,8 @@ outputs/*.mp4
 outputs/*.mov
 outputs/*.avi
 outputs/*.png
+build/
+dist/
 
 # MediaPipe model assets
 assets/*.task

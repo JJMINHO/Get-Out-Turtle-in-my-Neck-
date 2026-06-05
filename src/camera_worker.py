@@ -552,8 +552,8 @@ class CameraWorker:
 
     def _save_session_report(self):
         try:
-            os.makedirs("outputs", exist_ok=True)
-            report_path = os.path.join("outputs", "session_report.txt")
+            os.makedirs(config.DATA_DIR, exist_ok=True)
+            report_path = os.path.join(config.DATA_DIR, "session_report.txt")
             session_time = self.study_session.snapshot()["session_seconds"]
             avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
             avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
@@ -804,7 +804,7 @@ class CameraWorker:
 
         footer_y = panel_height - 24
         if footer_y > y:
-            self._draw_panel_text(panel, "Logging to: outputs/posture_focus_log.csv", 24, footer_y, 0.4, (100, 100, 100), 1)
+            self._draw_panel_text(panel, f"Logging to: {config.CSV_LOG_PATH}", 24, footer_y, 0.4, (100, 100, 100), 1)
         return panel
 
     def _draw_score_cards(self, panel, posture_score, posture_status, focus_score, focus_status, y):

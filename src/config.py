@@ -1,8 +1,25 @@
 import os
+import sys
+import tempfile
 
 def load_dotenv():
-    dotenv_path = ".env"
-    if os.path.exists(dotenv_path):
+    dotenv_paths = [
+        os.path.abspath(".env"),
+        os.path.join(os.getcwd(), ".env"),
+    ]
+    if getattr(sys, "frozen", False):
+        dotenv_paths.extend([
+            os.path.join(os.path.dirname(sys.executable), ".env"),
+            os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", ".env"),
+        ])
+
+    dotenv_path = None
+    for candidate in dict.fromkeys(dotenv_paths):
+        if os.path.exists(candidate):
+            dotenv_path = candidate
+            break
+
+    if dotenv_path:
         try:
             with open(dotenv_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -20,6 +37,43 @@ def load_dotenv():
 load_dotenv()
 
 # Configuration values used across the DeskFlow Coach application.
+
+
+APP_NAME = "DeskFlow Coach"
+
+
+def _resource_path(*parts):
+    """Return a resource path that works in source and PyInstaller builds."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, *parts)
+
+
+def _data_dir():
+    """Return a writable app data directory."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME))
+    else:
+        candidates.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs"))
+    candidates.append(os.path.join(tempfile.gettempdir(), APP_NAME))
+
+    for path in candidates:
+        try:
+            os.makedirs(path, exist_ok=True)
+            test_path = os.path.join(path, ".write_test")
+            with open(test_path, "w", encoding="utf-8") as test_file:
+                test_file.write("ok")
+            os.remove(test_path)
+            return path
+        except OSError:
+            continue
+    return tempfile.gettempdir()
+
+
+DATA_DIR = _data_dir()
 
 
 CAMERA_INDEX = 0
@@ -73,10 +127,10 @@ HEAD_PITCH_DOWN_THRESHOLD = 26
 HEAD_PITCH_UP_THRESHOLD = 24
 HEAD_ROLL_TILT_THRESHOLD = 15
 
-CSV_LOG_PATH = "outputs/posture_focus_log.csv"
-STUDY_EVENTS_CSV_PATH = "outputs/study_events.csv"
-DAILY_SESSIONS_CSV_PATH = "outputs/daily_sessions.csv"
-CALENDAR_EVENTS_CSV_PATH = "outputs/calendar_events.csv"
+CSV_LOG_PATH = os.path.join(DATA_DIR, "posture_focus_log.csv")
+STUDY_EVENTS_CSV_PATH = os.path.join(DATA_DIR, "study_events.csv")
+DAILY_SESSIONS_CSV_PATH = os.path.join(DATA_DIR, "daily_sessions.csv")
+CALENDAR_EVENTS_CSV_PATH = os.path.join(DATA_DIR, "calendar_events.csv")
 STUDY_EVENT_MIN_DURATION_SECONDS = 2.0
 # A work day runs from 05:00 through 04:59 the next calendar day.
 STUDY_DAY_START_HOUR = 5
@@ -110,5 +164,5 @@ DASHBOARD_WINDOW_NAME = "DeskFlow Dashboard"
 DASHBOARD_PANEL_WIDTH = 350
 
 # MediaPipe Tasks model assets (download these into assets/).
-POSE_MODEL_PATH = os.path.join("assets", "pose_landmarker_lite.task")
-FACE_MODEL_PATH = os.path.join("assets", "face_landmarker.task")
+POSE_MODEL_PATH = _resource_path("assets", "pose_landmarker_lite.task")
+FACE_MODEL_PATH = _resource_path("assets", "face_landmarker.task")

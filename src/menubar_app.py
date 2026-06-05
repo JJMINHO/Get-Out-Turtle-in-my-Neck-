@@ -106,4 +106,5 @@ class DeskPoseApp(rumps.App):
             self.worker.stop()
             self.worker.set_dashboard(False)
             self.worker.close_debug_window()
-        super().quit(sender)
+        import rumps
+        rumps.quit_application()
