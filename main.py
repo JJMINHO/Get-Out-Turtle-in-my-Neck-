@@ -33,11 +33,55 @@ def _data_dir():
     return tempfile.gettempdir()
 
 
+class Tee:
+    """Helper to write to both a file and standard terminal streams."""
+    def __init__(self, file, stream):
+        self.file = file
+        self.stream = stream
+
+    def write(self, data):
+        try:
+            self.file.write(data)
+        except Exception:
+            pass
+        try:
+            self.stream.write(data)
+        except Exception:
+            pass
+
+    def flush(self):
+        try:
+            self.file.flush()
+        except Exception:
+            pass
+        try:
+            self.stream.flush()
+        except Exception:
+            pass
+
+    def reconfigure(self, *args, **kwargs):
+        try:
+            if hasattr(self.stream, "reconfigure"):
+                self.stream.reconfigure(*args, **kwargs)
+            if hasattr(self.file, "reconfigure"):
+                self.file.reconfigure(*args, **kwargs)
+        except Exception:
+            pass
+
+
 def _setup_runtime_logging():
     log_path = os.path.join(_data_dir(), "app.log")
     log_file = open(log_path, "a", encoding="utf-8")
-    sys.stdout = log_file
-    sys.stderr = log_file
+    
+    if getattr(sys, "frozen", False):
+        # Packaged app redirects everything to app.log only
+        sys.stdout = log_file
+        sys.stderr = log_file
+    else:
+        # Source runs print to both terminal and app.log
+        sys.stdout = Tee(log_file, sys.__stdout__)
+        sys.stderr = Tee(log_file, sys.__stderr__)
+
     try:
         sys.stdout.reconfigure(line_buffering=True)
         sys.stderr.reconfigure(line_buffering=True)
