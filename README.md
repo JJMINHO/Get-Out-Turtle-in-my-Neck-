@@ -175,3 +175,145 @@ Webcam frame
 
 ---
 
+## Project Structure
+
+```text
+deskpose-coach/
+├── main.py
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── DeskFlowCoach.spec
+├── assets/              # app icon and MediaPipe task models
+├── scripts/             # macOS build script
+├── src/                 # dashboard, camera worker, CV analyzers, scoring, feedback
+└── outputs/             # source-run logs and CSV data
+```
+
+---
+
+## Run From Source
+
+```bash
+cd /Users/randonlb/Desktop/deskpose-coach
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python main.py
+```
+
+Source-run data is saved under `outputs/`.
+
+---
+
+## Windows Support
+
+Windows terminal mode is currently in progress. The current release target is macOS, and the menu bar widget, `.app` bundle, and DMG packaging are macOS-only.
+
+---
+
+## Run the macOS App
+
+```text
+dist/DeskFlow Coach.app
+dist/DeskFlow_Coach.dmg
+```
+
+App data is saved here:
+
+```text
+~/Library/Application Support/DeskFlow Coach
+```
+
+---
+
+## Build for macOS
+
+```bash
+./scripts/build_macos_app.sh
+```
+
+Optional DMG:
+
+```bash
+hdiutil create -volname "DeskFlow Coach" \
+  -srcfolder "dist/DeskFlow Coach.app" \
+  -ov -format UDZO \
+  "dist/DeskFlow_Coach.dmg"
+```
+
+---
+
+## API Key Setup
+
+AI feedback is optional. Without an API key, the app uses local rule-based feedback.
+
+```bash
+cp .env.example .env
+```
+
+```text
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.4-mini
+
+# Optional fallback
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+For the packaged app, place `.env` here:
+
+```text
+~/Library/Application Support/DeskFlow Coach/.env
+```
+
+Do not commit or bundle real API keys.
+
+---
+
+## Data and Logs
+
+| File | Description |
+|---|---|
+| `posture_focus_log.csv` | posture / focus frame-level log |
+| `study_events.csv` | Focused, Bad Posture, No Face 등 구간 이벤트 |
+| `daily_sessions.csv` | 하루 단위 작업 세션 요약 |
+| `calendar_events.csv` | 캘린더 일정 데이터 |
+| `app.log` | 배포 앱 실행 로그 |
+
+Source run: `outputs/`  
+Packaged app: `~/Library/Application Support/DeskFlow Coach`
+
+---
+
+## Camera Permission
+
+```text
+System Settings
+→ Privacy & Security
+→ Camera
+→ Terminal, IDE, 또는 DeskFlow Coach 허용
+```
+
+다른 앱이 카메라를 사용 중이면 OpenCV capture가 실패할 수 있습니다.
+
+---
+
+## Accuracy Notice
+
+DeskFlow Coach is not a medical posture diagnosis tool, clinical drowsiness detector, exact gaze tracker, or psychological attention measurement system. Scores are lightweight webcam landmark-based visual proxies.
+
+---
+
+## Open Source
+
+OpenCV, MediaPipe, NumPy, pandas, matplotlib, customtkinter, rumps, Pillow, and PyInstaller.
+
+OpenAI API와 Gemini API는 외부 AI 서비스이며, 이 저장소의 오픈소스 라이선스 범위에 포함되지 않습니다.
+
+---
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.
