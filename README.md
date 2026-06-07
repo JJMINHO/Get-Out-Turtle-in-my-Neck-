@@ -213,7 +213,7 @@ deskpose-coach/
 
 ### 📥 DMG 배포판 실행 방법 (권장)
 
-1. **앱 다운로드**: [📥 macOS용 DeskFlow_Coach.dmg 다운로드](https://drive.google.com/file/d/1xSfHXuZ1yc1vdg8pzYM8dovkzcD3N2AI/view?usp=sharing)
+1. **앱 다운로드**: [📥 macOS용 DeskFlow_Coach.dmg 다운로드](https://drive.google.com/file/d/1Wlls9NvBhMybV81mm6agVb7Psj3echQE/view?usp=sharing)
 2. **설치**: 다운로드한 `.dmg` 파일을 더블 클릭하여 열고, `DeskFlow Coach` 아이콘을 `Applications(응용 프로그램)` 폴더로 드래그 앤 드롭합니다.
 3. **최초 실행 보안 승인 (macOS Gatekeeper 우회)**:
    - 애플 개발자 등록을 거치지 않은 비인증 인하우스 빌드 앱이므로, 최초 실행 시 차단 메시지가 나타납니다.
@@ -227,34 +227,6 @@ deskpose-coach/
 * **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
 
 ---
-
-## Developer Guide (개발자용)
-
-소스코드의 직접 수정이나 빌드를 원하는 개발자는 아래 가이드를 참조하세요. (로컬 Mac 환경의 Python 버전, Tkinter 및 AppKit 스레딩 충돌 상태에 따라 소스 구동 시 오작동이 발생할 수 있습니다.)
-
-### 1. 소스코드 클론 및 실행
-```bash
-# 저장소 클론 및 디렉토리 이동
-git clone https://github.com/JJMINHO/DeskFlow_Coach.git
-cd DeskFlow_Coach
-
-# 가상환경 구성 및 패키지 설치
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# 앱 실행
-python main.py
-```
-* **AI 모델**: MediaPipe 얼굴 및 자세 인식 모델(`.task` 파일)은 `assets/` 디렉토리에 기본 내장되어 있습니다.
-
-### 2. 패키징 및 빌드
-```bash
-# macOS .app 번들 빌드
-./scripts/build_macos_app.sh
-
-# .dmg 디스크 이미지 패키징
-hdiutil create -volname "DeskFlow Coach" -srcfolder "dist/DeskFlow Coach.app" -ov -format UDZO "dist/DeskFlow_Coach.dmg"
-```
 
 ## 데이터 및 로그
 
