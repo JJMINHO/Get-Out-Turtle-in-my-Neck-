@@ -209,18 +209,20 @@ Source-run data is saved under `outputs/`.
 
 ## Windows Support
 
-Windows terminal mode is currently in progress. The current release target is macOS, and the menu bar widget, `.app` bundle, and DMG packaging are macOS-only.
+Mac OS용 프로그램으로 초기 기획되어, Windows terminal mode는 현재 구현 중입니다. 
 
 ---
 
-## Run the macOS App
+## macOS 앱 실행
+
+패키징된 앱은 아래 파일로 실행할 수 있습니다.
 
 ```text
 dist/DeskFlow Coach.app
 dist/DeskFlow_Coach.dmg
 ```
 
-App data is saved here:
+앱 데이터는 다음 경로에 저장됩니다.
 
 ```text
 ~/Library/Application Support/DeskFlow Coach
@@ -228,13 +230,13 @@ App data is saved here:
 
 ---
 
-## Build for macOS
+## macOS 빌드
 
 ```bash
 ./scripts/build_macos_app.sh
 ```
 
-Optional DMG:
+DMG 파일은 아래 명령어로 직접 생성할 수 있습니다.
 
 ```bash
 hdiutil create -volname "DeskFlow Coach" \
@@ -245,9 +247,10 @@ hdiutil create -volname "DeskFlow Coach" \
 
 ---
 
-## API Key Setup
+## API Key 설정
 
-AI feedback is optional. Without an API key, the app uses local rule-based feedback.
+AI 피드백 기능은 선택 사항입니다.  
+API Key가 없어도 로컬 규칙 기반 피드백은 사용할 수 있습니다.
 
 ```bash
 cp .env.example .env
@@ -257,37 +260,49 @@ cp .env.example .env
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.4-mini
 
-# Optional fallback
+또는,
+
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-2.0-flash
 ```
 
-For the packaged app, place `.env` here:
+패키징된 앱에서는 `.env` 파일을 아래 경로에 두면 됩니다.
 
 ```text
 ~/Library/Application Support/DeskFlow Coach/.env
 ```
 
-Do not commit or bundle real API keys.
+실제 API Key는 GitHub에 커밋하거나 앱에 포함하지 마세요.
 
 ---
 
-## Data and Logs
+## 데이터 및 로그
 
-| File | Description |
+소스 코드로 실행할 경우:
+
+```text
+outputs/
+```
+
+패키징된 앱으로 실행할 경우:
+
+```text
+~/Library/Application Support/DeskFlow Coach
+```
+
+| 파일 | 설명 |
 |---|---|
-| `posture_focus_log.csv` | posture / focus frame-level log |
+| `posture_focus_log.csv` | 프레임 단위 자세 / 집중도 로그 |
 | `study_events.csv` | Focused, Bad Posture, No Face 등 구간 이벤트 |
-| `daily_sessions.csv` | 하루 단위 작업 세션 요약 |
+| `daily_sessions.csv` | 하루 단위 세션 요약 |
 | `calendar_events.csv` | 캘린더 일정 데이터 |
 | `app.log` | 배포 앱 실행 로그 |
 
-Source run: `outputs/`  
-Packaged app: `~/Library/Application Support/DeskFlow Coach`
-
 ---
 
-## Camera Permission
+## 카메라 권한
+
+macOS에서 카메라 권한을 허용해야 합니다.
 
 ```text
 System Settings
@@ -300,15 +315,9 @@ System Settings
 
 ---
 
-## Accuracy Notice
-
-DeskFlow Coach is not a medical posture diagnosis tool, clinical drowsiness detector, exact gaze tracker, or psychological attention measurement system. Scores are lightweight webcam landmark-based visual proxies.
-
----
-
 ## Open Source
 
-OpenCV, MediaPipe, NumPy, pandas, matplotlib, customtkinter, rumps, Pillow, and PyInstaller.
+이 프로젝트는 OpenCV, MediaPipe, NumPy, pandas, matplotlib, CustomTkinter, rumps, Pillow, PyInstaller를 사용합니다.
 
 OpenAI API와 Gemini API는 외부 AI 서비스이며, 이 저장소의 오픈소스 라이선스 범위에 포함되지 않습니다.
 
