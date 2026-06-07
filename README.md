@@ -1,8 +1,12 @@
 # DeskFlow Coach
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-brightgreen.svg)](https://github.com/JJMINHO/DeskFlow_Coach)
-[![Platform: macOS](https://img.shields.io/badge/Platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
+[![Version](https://img.shields.io/badge/version-1.0.0-grey)](#)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-yellow?logo=python&logoColor=white)](#)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10.x-teal)](#)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.x-green?logo=opencv&logoColor=white)](#)
+[![CustomTkinter](https://img.shields.io/badge/CustomTkinter-5.x-orange)](#)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
 
 웹캠으로 자세, 화면 집중 흐름, 하루 작업 리듬을 함께 보여주는 macOS 데스크톱 코치입니다.
 
