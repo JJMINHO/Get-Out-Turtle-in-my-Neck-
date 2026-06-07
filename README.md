@@ -227,17 +227,20 @@ deskpose-coach/
 * **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
 * macOS에서는 DMG 실행과 소스 실행 모두 위 경로를 사용합니다.
 
-### Source 실행 방법
+### 터미널로 실행하는 방법
 
-macOS에서 source로 실행할 때 posture 기능까지 사용하려면 Python 3.12 환경을 권장합니다.
+macOS에서 clone 후 터미널로 실행할 때는 Python 3.12 환경을 권장합니다.
 
 ```bash
-git clone https://github.com/JJMINHO/DeskFlow_Coach.git
-cd DeskFlow_Coach
+git clone https://github.com/JJMINHO/DeskFlow_Coach.git DeskFlow_Coach_312
+cd DeskFlow_Coach_312
+
 python3.12 -m venv .venv
 source .venv/bin/activate
+
 pip install --upgrade pip
 pip install -r requirements.txt
+
 python main.py
 ```
 
