@@ -239,9 +239,6 @@ hdiutil create -volname "DeskFlow Coach" -srcfolder "dist/DeskFlow Coach.app" -o
 | `calendar_events.csv` | 캘린더 일정 데이터 |
 | `app.log` | 배포 앱 실행 로그 |
 
-* 소스 실행: `outputs/`
-* 패키징 앱 실행: `~/Library/Application Support/DeskFlow Coach`
-
 ---
 
 ## Open Source
