@@ -131,5 +131,12 @@ if __name__ == "__main__":
         freeze_support()
         sys.exit(0)
 
+    # Force spawn method on macOS to isolate Tkinter/AppKit UI threads and camera handles from rumps menu bar
+    if sys.platform == 'darwin':
+        try:
+            multiprocessing.set_start_method('spawn', force=True)
+        except Exception:
+            pass
+
     multiprocessing.freeze_support()
     main()

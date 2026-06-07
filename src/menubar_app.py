@@ -71,6 +71,11 @@ class DeskPoseApp(rumps.App):
             self.worker.dashboard_process is None or not self.worker.dashboard_process.is_alive()
         ):
             self.worker.show_dashboard = False
+            if self.worker.dashboard_process is not None:
+                try:
+                    self.worker.dashboard_process.join(timeout=1.0)
+                except Exception:
+                    pass
             self.worker.dashboard_process = None
             self.worker.dashboard_queue = None
             self.worker.dashboard_command_queue = None
