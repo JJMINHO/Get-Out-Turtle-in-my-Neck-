@@ -226,8 +226,6 @@ deskpose-coach/
 
 * **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
 
----
-
 ## 데이터 및 로그
 
 | 파일 | 설명 |
