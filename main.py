@@ -51,7 +51,7 @@ def _setup_runtime_logging():
 
 
 def main():
-    """Start the dashboard first, then fall back to the menu bar widget."""
+    """Start the menu bar app, which will automatically spawn the dashboard."""
     log_file = _setup_runtime_logging()
     try:
         from src.env_loader import load_dotenv
@@ -61,11 +61,11 @@ def main():
         print(f"POSE_MODEL_PATH: {POSE_MODEL_PATH} (Exists: {os.path.exists(POSE_MODEL_PATH)})", flush=True)
         print(f"FACE_MODEL_PATH: {FACE_MODEL_PATH} (Exists: {os.path.exists(FACE_MODEL_PATH)})", flush=True)
 
-        from src.dashboard_ui import run_dashboard_app
-        worker = run_dashboard_app(stop_worker_on_close=False)
-        from src.menubar_app import DeskPoseApp
+        from src.camera_worker import CameraWorker
+        worker = CameraWorker()
 
-        DeskPoseApp(worker=worker).run()
+        from src.menubar_app import DeskPoseApp
+        DeskPoseApp(worker=worker, auto_show_dashboard=True).run()
     except Exception as exc:
         print(f"Error starting application: {exc}", file=sys.stderr, flush=True)
         traceback.print_exc()

@@ -10,7 +10,7 @@ from src.camera_worker import CameraWorker
 
 
 class DeskPoseApp(rumps.App):
-    def __init__(self, worker=None):
+    def __init__(self, worker=None, auto_show_dashboard=False):
         super(DeskPoseApp, self).__init__("DeskFlow", quit_button=None)
         self.title = "DeskFlow (Off)"
         self.worker = worker or CameraWorker(ui_callback=self.update_scores)
@@ -33,6 +33,13 @@ class DeskPoseApp(rumps.App):
         # rumps UI updates are safest from the app event loop.
         self.refresh_timer = rumps.Timer(self.refresh_title, 1)
         self.refresh_timer.start()
+
+        if auto_show_dashboard:
+            self.worker.set_dashboard(True)
+            self.is_monitoring = True
+            self.title = "Starting..."
+            self._sync_start_stop_menu()
+            self.worker.start()
 
     def show_dashboard(self, sender):
         self.worker.set_dashboard(True)

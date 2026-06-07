@@ -1,52 +1,89 @@
 # DeskFlow Coach
 
-자세, 집중, 일정 흐름을 함께 읽어주는 macOS 작업 코치
+웹캠으로 자세, 화면 집중 흐름, 하루 작업 리듬을 함께 보여주는 macOS 데스크톱 코치입니다.
 
-DeskFlow Coach는 웹캠 기반 컴퓨터비전으로 사용자의 앉은 자세, 화면 집중 상태, 작업 흐름을 가볍게 분석하는 데스크톱 앱입니다. 별도 센서 없이 카메라 입력만으로 posture score, focus score, performance score를 계산하고, 그 결과를 대시보드와 메뉴바에서 바로 확인할 수 있습니다.
+DeskFlow Coach는 별도 센서 없이 카메라 입력만으로 사용자의 앉은 자세와 화면 주시 상태를 가볍게 분석하고, 이를 Performance Score, 일일 리포트, 캘린더 일정, 메뉴바 위젯으로 연결합니다. 의료용 진단 도구나 정확한 eye tracker가 아니라, 컴퓨터비전 기반의 작업 습관 모니터링 MVP입니다.
 
-이 앱은 의료용 자세 진단기나 정확한 eye tracker가 아닙니다. DeskFlow Coach는 term project MVP 수준의 lightweight monitoring tool이며, 작업 습관을 돌아보기 위한 시각적 보조 도구입니다.
+![DeskFlow Coach dashboard demo](docs/images/dashboard-demo.png)
 
----
-
-## 왜 DeskFlow Coach인가
-
-책상 앞에 오래 앉아 있으면 자세는 무너지고, 집중은 조용히 흩어집니다. DeskFlow Coach는 이 흐름을 숫자와 시각화로 보여줍니다.
-
-- 지금 자세가 안정적인지
-- 화면을 보고 있는지, 자주 이탈하는지
-- 오늘 얼마나 공부했고 얼마나 집중했는지
-- 마감 일정 대비 지금 페이스가 괜찮은지
-- 하루 작업의 양과 질이 어느 정도였는지
-
-DeskFlow Coach는 단순히 "카메라 화면을 보여주는 앱"이 아니라, 컴퓨터비전 분석 결과를 하루 단위 performance score와 리포트로 연결합니다.
+> Demo image placeholder: 위 경로에 대시보드 실행 화면을 넣으면 됩니다.
 
 ---
 
-## 주요 기능
+## Highlights
 
-### 실시간 자세 분석
+- 실시간 카메라 기반 자세 및 화면 집중 흐름 분석
+- MediaPipe pose / face landmarks 기반 rule-based scoring
+- 시작/중지 상태에 따라 바뀌는 단일 모니터링 버튼
+- macOS 메뉴바 위젯: `Show Dashboard`, `Start` 또는 `Stop`, `Quit`
+- 05:00부터 다음날 04:59까지를 하루로 계산하는 일일 통계
+- Performance Score와 일일 리포트
+- 월별 캘린더와 일정 추가, 수정, 삭제
+- 일정과 현재 score를 반영하는 선택적 AI feedback
+- CSV 기반 로그 저장과 발표용 debug overlay
 
-MediaPipe pose / face landmarks를 활용해 사용자의 앉은 자세를 분석합니다.
+---
+
+## App Screens
+
+### Dashboard
+
+![Dashboard screenshot](docs/images/dashboard-screenshot.png)
+
+> Demo image placeholder: 메인 대시보드 전체 화면을 넣어주세요.
+
+### Calendar
+
+![Calendar screenshot](docs/images/calendar-screenshot.png)
+
+> Demo image placeholder: 월별 캘린더와 일정 관리 화면을 넣어주세요.
+
+### Daily Report
+
+![Daily report screenshot](docs/images/daily-report-screenshot.png)
+
+> Demo image placeholder: 일일 리포트 화면을 넣어주세요.
+
+---
+
+## Main Features
+
+### Real-time Vision Dashboard
+
+대시보드는 앱 실행 직후 바로 열립니다. 카메라 화면, posture score, focus score, 작업 시간, 집중 시간, Performance Score, feedback을 한 화면에서 확인할 수 있습니다.
+
+- 카메라 촬영 중일 때만 `Live Camera` 표시
+- 카메라 view 토글 시 대시보드가 compact layout으로 자동 조정
+- 시작 상태에서는 버튼이 `중지`, 중지 상태에서는 `시작`으로 표시
+- 로컬 자세 피드백과 AI 일정 피드백을 분리해서 표시
+
+### Posture Analysis
+
+MediaPipe Pose와 Face landmarks를 사용해 사용자의 자세 변화를 추정합니다. 초기 baseline을 기준으로 얼굴/어깨 비율, 어깨 높이, 상체 기울기, 화면과의 상대 거리 등을 계산합니다.
+
+표시 및 기록되는 주요 지표:
 
 - posture score
-- forward head / slouch risk proxy
-- shoulder slope
+- neck / shoulder / torso related metrics
 - face-to-screen distance proxy
-- baseline calibration 기반 자세 변화 감지
+- posture status: `Good`, `Warning`, `Bad`
+- posture reset calibration
 
-### 실시간 집중도 분석
+### Focus Analysis
 
-얼굴 방향, 눈 주변 landmark, iris 위치, 눈 감김 신호를 이용해 화면 집중 상태를 대략적으로 추정합니다.
+얼굴 감지 여부, head direction, coarse gaze zone, eye closure signal을 조합해 화면 집중 상태를 추정합니다.
+
+표시 및 기록되는 주요 지표:
 
 - focus score
-- coarse gaze zone
-- reading state
-- away / no face state
-- blink / long eye closure 기반 drowsy signal
+- coarse gaze zone: `Center`, `Left`, `Right`, `Up`, `Down`, `Away`, `No Face`
+- focused / distracted / away state
+- blink and long eye closure signal
+- reading-like state proxy
 
 ### Performance Score
 
-하루 작업 흐름을 하나의 점수로 요약합니다. 하루 기준은 05:00부터 다음날 04:59까지입니다.
+Performance Score는 하루의 작업 흐름을 하나의 점수로 요약합니다. 하루 기준은 오전 5시에 시작해 다음날 오전 4시 59분에 끝납니다.
 
 ```text
 Performance Score =
@@ -55,7 +92,7 @@ Performance Score =
 + Focus & Posture 30점
 ```
 
-점수는 다음 데이터를 조합합니다.
+사용되는 데이터:
 
 - 총 작업 시간
 - 총 집중 시간
@@ -64,180 +101,171 @@ Performance Score =
 - away / no face / drowsy signal 시간
 - posture score와 focus score의 조합
 
-### Daily Vision Report
+### Calendar
 
-하루의 작업 상태를 리포트 창에서 시각적으로 확인할 수 있습니다.
+대시보드에서 월별 캘린더를 열고 일정과 하루 기록을 함께 확인할 수 있습니다.
 
-- Performance Score
-- score parts: focus, work/study amount, Focus & Posture
-- daily metrics progress bars
-- Focus x Posture quadrant
-- work state timeline
-- state duration summary
+- 월별 이동
+- 일정 추가, 수정, 삭제
+- 날짜별 작업 시간, 집중 시간, Performance Score 표시
+- 일정 종류와 중요도 설정
+- 05:00 이전 기록은 전날 기준으로 표시
 
-### 캘린더와 일정 관리
+### AI Feedback
 
-대시보드에서 월별 캘린더를 열고 일정을 관리할 수 있습니다.
+OpenAI API key를 설정하면 캘린더 일정과 현재 작업 흐름을 반영한 짧은 코칭 문구를 생성합니다. 가까운 시험, 프로젝트, 마감이 있거나 Performance Score가 낮을수록 더 직접적인 메시지를 요청합니다.
 
-- 월별 캘린더 보기
-- 일정 추가 / 수정 / 삭제
-- 날짜 입력창 클릭 시 날짜 선택 목록 표시
-- 시험, 프로젝트, 마감, 과제 일정 기록
-- 일정이 OpenAI AI coach feedback에 반영됨
+자세 관련 조언은 API가 아니라 로컬 디텍팅 수치로 생성됩니다. API는 일정, 업무량, 집중 흐름에 대한 문구에만 사용됩니다. API key가 없거나 호출에 실패하면 rule-based feedback이 표시됩니다.
 
-### OpenAI AI Coach Feedback
+### Menu Bar Widget
 
-OpenAI API를 연결하면 Feedback 카드가 더 맥락 있는 작업 코치처럼 동작합니다.
+대시보드를 닫아도 앱은 메뉴바에 남아 상태를 표시할 수 있습니다.
 
-입력으로 사용되는 정보:
+메뉴 구성:
 
-- 오늘 집중 작업 시간
-- 현재 세션 시간
-- posture score
-- focus score
-- focused / away / no face 시간
-- 캘린더의 시험 및 마감 일정
+- `Show Dashboard`
+- `Start` 또는 `Stop`
+- `Quit`
 
-출력 예시:
-
-```text
-마감이 가까운데 집중 시간이 부족합니다. 지금은 정리보다 제출 가능한 결과물을 만드는 데 25분만 몰아붙이세요.
-```
-
-API key가 없거나 호출에 실패하면 기존 rule-based feedback이 자동으로 표시됩니다.
-
-### 메뉴바 위젯
-
-대시보드를 닫아도 앱은 메뉴바 위젯으로 남을 수 있습니다.
-
-```text
-P: 90 | F: 88
-```
-
-메뉴바에서는 모니터링 시작/중지, 디버그 창, 캘린더 요약, 출력 폴더 열기 등을 사용할 수 있습니다.
+`Quit`은 camera worker와 dashboard를 정리한 뒤 앱을 종료합니다.
 
 ---
 
-## 화면 구성
+## Technology Stack
 
-DeskFlow Coach의 기본 화면은 healthcare dashboard 스타일로 구성되어 있습니다.
-
-- Live Camera preview
-- Posture Score
-- Focus Score
-- Focus Session
-- Focus Work Time
-- Performance Score
-- OpenAI / Gemini fallback / rule-based Feedback
-- Calendar
-- Daily Vision Report
-
-카메라 뷰를 끄면 대시보드는 compact mode로 전환되어 더 작은 화면에서도 점수와 피드백을 볼 수 있습니다.
-
----
-
-## 사용 기술
-
-| 영역 | 사용 기술 |
+| Area | Stack |
 |---|---|
 | Language | Python |
 | Computer Vision | OpenCV, MediaPipe |
 | Numerical | NumPy |
 | UI | customtkinter, rumps |
-| Data | pandas, matplotlib, CSV |
+| Data | CSV, pandas, matplotlib |
 | Image Handling | Pillow |
 | AI Feedback | OpenAI API, optional Gemini fallback |
+| Packaging | PyInstaller, macOS `.app`, DMG |
 | Platform | macOS |
 
 ---
 
-## 컴퓨터비전 파이프라인
+## Vision Pipeline
 
 ```text
 Webcam frame
-→ OpenCV preprocessing
-→ MediaPipe pose landmarks
-→ MediaPipe face / eye landmarks
+→ OpenCV capture / preprocessing
+→ MediaPipe Pose landmarks
+→ MediaPipe Face / Eye landmarks
 → posture metrics
-→ gaze / head / eye state analysis
+→ head / gaze / eye state analysis
 → posture score + focus score
 → work state segmentation
-→ daily score + visual report
+→ daily score + calendar + report
+→ dashboard / menu bar / CSV logs
 ```
 
-사용된 주요 비전 분석:
+주요 컴퓨터비전 기술:
 
 - webcam frame capture
 - pose landmark detection
 - face landmark detection
-- iris / eye landmark ratio
+- iris and eye landmark ratios
 - head yaw / pitch / roll approximation
 - eye aspect ratio
-- face size based distance proxy
+- face-size based distance proxy
 - rule-based posture scoring
 - rule-based focus scoring
 - time-based work state segmentation
+- OpenCV debug overlay visualization
 
 ---
 
-## 설치 및 실행
+## Project Structure
 
-### 1. 저장소 준비
+```text
+deskpose-coach/
+├── main.py
+├── requirements.txt
+├── README.md
+├── LICENSE
+├── DeskFlowCoach.spec
+├── assets/
+│   ├── app_icon.png
+│   └── app_icon.icns
+├── scripts/
+│   └── build_macos_app.sh
+├── src/
+│   ├── camera_worker.py
+│   ├── dashboard_ui.py
+│   ├── menubar_app.py
+│   ├── pose_analyzer.py
+│   ├── face_analyzer.py
+│   ├── gaze_analyzer.py
+│   ├── posture_score.py
+│   ├── focus_score.py
+│   ├── daily_score.py
+│   ├── study_event_segmenter.py
+│   └── ai_feedback.py
+└── outputs/
+```
+
+---
+
+## Run From Source
+
+### 1. Clone or open the project
 
 ```bash
 cd /Users/randonlb/Desktop/deskpose-coach
 ```
 
-### 2. 가상환경 생성 및 활성화
+### 2. Create and activate a virtual environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. 패키지 설치
+### 3. Install dependencies
 
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. 실행
+### 4. Start the app
 
 ```bash
 python main.py
 ```
 
+소스 실행 시 데이터는 기본적으로 `outputs/` 아래에 저장됩니다.
+
 ---
 
-## AI Feedback API 설정
+## Run the macOS App
 
-OpenAI API를 연결하면 Feedback 카드가 일정, 집중 상태, 누적 작업 시간을 반영해 더 맥락 있는 코칭 문구를 생성합니다.
-프로젝트 루트에 `.env` 파일을 만듭니다.
-
-```bash
-cp .env.example .env
-```
-
-`.env`:
+빌드된 앱을 실행하려면 다음 파일을 엽니다.
 
 ```text
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.4-mini
-
-# Optional fallback
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash
+dist/DeskFlow Coach.app
 ```
 
-`OPENAI_API_KEY`가 있으면 OpenAI Responses API를 먼저 사용하고, 없으면 Gemini 설정을 fallback으로 확인합니다.
-배포 환경에서는 `.env` 파일을 포함하지 말고, OS 환경변수나 패키징 도구의 secret 설정으로 API 키를 주입하세요.
+또는 DMG를 열어 설치합니다.
+
+```text
+dist/DeskFlow_Coach.dmg
+```
+
+배포 앱의 데이터 저장 위치:
+
+```text
+~/Library/Application Support/DeskFlow Coach
+```
 
 ---
 
-## macOS 앱 번들 빌드
+## Build for macOS
 
-PyInstaller로 `.app` 번들을 만들 수 있습니다.
+PyInstaller 기반 빌드 스크립트를 사용합니다. 프로젝트에 `.venv`가 있으면 해당 Python을 우선 사용합니다.
 
 ```bash
 ./scripts/build_macos_app.sh
@@ -249,80 +277,78 @@ PyInstaller로 `.app` 번들을 만들 수 있습니다.
 dist/DeskFlow Coach.app
 ```
 
-배포 앱은 분석 로그와 일정 데이터를 다음 위치에 저장합니다.
+DMG를 만들려면:
 
-```text
-~/Library/Application Support/DeskFlow Coach
+```bash
+hdiutil create -volname "DeskFlow Coach" \
+  -srcfolder "dist/DeskFlow Coach.app" \
+  -ov -format UDZO \
+  "dist/DeskFlow_Coach.dmg"
 ```
 
-배포 앱에서 API 키를 사용하려면 다음 파일을 만들 수 있습니다.
+---
+
+## API Key Setup
+
+AI feedback은 선택 기능입니다. API key가 없어도 앱은 로컬 rule-based feedback으로 동작합니다.
+
+소스 실행용 `.env`:
+
+```bash
+cp .env.example .env
+```
+
+```text
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.4-mini
+
+# Optional fallback
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+배포 앱에서 API key를 사용하려면 다음 위치에 `.env` 파일을 둡니다.
 
 ```text
 ~/Library/Application Support/DeskFlow Coach/.env
 ```
 
-예시:
-
-```text
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.4-mini
-```
-
-`.env` 파일과 실제 API 키는 앱 번들 또는 저장소에 포함하지 마세요.
+실제 API key는 저장소, README, 앱 번들에 포함하지 마세요.
 
 ---
 
-## 캘린더 일정 데이터
+## Data and Logs
 
-일정은 다음 CSV에 저장됩니다.
+DeskFlow Coach는 분석 결과를 CSV로 저장합니다.
 
-```text
-outputs/calendar_events.csv
-```
-
-형식:
-
-```csv
-date,title,type,priority
-2026-06-10,운영체제 기말고사,exam,high
-2026-06-12,캡스톤 프로젝트 제출,deadline,high
-```
-
-대시보드 캘린더에서 직접 추가, 수정, 삭제할 수 있습니다.
-
----
-
-## 로그와 리포트
-
-DeskFlow Coach는 분석 결과를 `outputs/` 아래에 저장합니다.
-
-| 파일 | 설명 |
+| File | Description |
 |---|---|
-| `outputs/posture_focus_log.csv` | frame-level posture / focus 로그 |
-| `outputs/study_events.csv` | Focused, Bad Posture, No Face 등 구간 이벤트 |
-| `outputs/daily_sessions.csv` | 하루 단위 작업 세션 요약 |
-| `outputs/calendar_events.csv` | 시험, 마감, 프로젝트 일정 |
+| `posture_focus_log.csv` | posture / focus frame-level log |
+| `study_events.csv` | Focused, Bad Posture, No Face 등 구간 이벤트 |
+| `daily_sessions.csv` | 하루 단위 작업 세션 요약 |
+| `calendar_events.csv` | 캘린더 일정 데이터 |
+| `app.log` | 배포 앱 실행 로그 |
 
-대용량 영상 파일이나 원본 webcam frame은 기본적으로 저장하지 않습니다.
+소스 실행에서는 `outputs/`에 저장되고, 배포 앱에서는 `~/Library/Application Support/DeskFlow Coach`에 저장됩니다.
 
 ---
 
-## macOS 카메라 권한
+## Camera Permission
 
-카메라가 열리지 않으면 macOS 권한을 확인하세요.
+macOS에서 카메라가 열리지 않으면 권한을 확인하세요.
 
 ```text
 System Settings
 → Privacy & Security
 → Camera
-→ Terminal 또는 사용 중인 IDE 허용
+→ Terminal, IDE, 또는 DeskFlow Coach 허용
 ```
 
-다른 앱이 카메라를 사용 중인 경우에도 webcam capture가 실패할 수 있습니다.
+다른 앱이 카메라를 사용 중이면 OpenCV capture가 실패할 수 있습니다.
 
 ---
 
-## 정확도 및 책임 고지
+## Accuracy Notice
 
 DeskFlow Coach는 다음을 제공하지 않습니다.
 
@@ -332,11 +358,11 @@ DeskFlow Coach는 다음을 제공하지 않습니다.
 - 심리학적 집중도 측정
 - 사용자 상태에 대한 완전한 판단
 
-이 앱의 점수는 webcam landmark 기반의 lightweight visual proxy입니다. 자세와 집중 습관을 돌아보는 참고 지표로 사용하세요.
+이 앱의 점수는 webcam landmark 기반의 lightweight visual proxy입니다. 자세와 작업 습관을 돌아보기 위한 참고 지표로 사용하세요.
 
 ---
 
-## 오픈소스
+## Open Source
 
 DeskFlow Coach는 다음 오픈소스 기술을 사용합니다.
 
@@ -348,38 +374,12 @@ DeskFlow Coach는 다음 오픈소스 기술을 사용합니다.
 - customtkinter
 - rumps
 - Pillow
+- PyInstaller
 
-OpenAI API와 Gemini API는 외부 AI 서비스이며 오픈소스 라이브러리가 아닙니다.
-
----
-
-## 프로젝트 상태
-
-현재 구현된 기능:
-
-- macOS 대시보드 앱
-- 메뉴바 위젯
-- webcam 분석 루프
-- posture score
-- focus score
-- work state segmentation
-- CSV logging
-- calendar schedule management
-- OpenAI AI feedback with Gemini fallback
-- daily performance score
-- daily vision report
-- debug visualization
-
-추후 개선 아이디어:
-
-- 일일 리포트의 더 정교한 chart rendering
-- 사용자별 작업 기준 설정
-- 캘린더 일정 알림
-- optional gaze calibration
-- macOS app packaging
+OpenAI API와 Gemini API는 외부 AI 서비스이며, 이 저장소의 오픈소스 라이선스 범위에 포함되지 않습니다.
 
 ---
 
 ## License
 
-DeskFlow Coach is released under the MIT License. See [LICENSE](LICENSE) for details.
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.

@@ -3,8 +3,21 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-BUILD_PYTHON="${DESKFLOW_BUILD_PYTHON:-/usr/bin/python3}"
-BUILD_VENV="${DESKFLOW_BUILD_VENV:-.venv-build}"
+if [ -n "${DESKFLOW_BUILD_PYTHON:-}" ]; then
+  BUILD_PYTHON="$DESKFLOW_BUILD_PYTHON"
+elif [ -x ".venv/bin/python" ]; then
+  BUILD_PYTHON=".venv/bin/python"
+else
+  BUILD_PYTHON="/usr/bin/python3"
+fi
+
+if [ -n "${DESKFLOW_BUILD_VENV:-}" ]; then
+  BUILD_VENV="$DESKFLOW_BUILD_VENV"
+elif [ -x ".venv/bin/python" ]; then
+  BUILD_VENV=".venv"
+else
+  BUILD_VENV=".venv-build"
+fi
 
 if [ ! -d "$BUILD_VENV" ]; then
   "$BUILD_PYTHON" -m venv "$BUILD_VENV"
@@ -30,6 +43,7 @@ WRAPPED_ONEDIR_NAME="DeskFlow Coach"
 rm -rf "$APP_PATH"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp -R "$ONEDIR_PATH" "$APP_PATH/Contents/Resources/$WRAPPED_ONEDIR_NAME"
+cp "assets/app_icon.icns" "$APP_PATH/Contents/Resources/app_icon.icns"
 
 cat > "$APP_PATH/Contents/MacOS/DeskFlow Coach" <<'LAUNCHER'
 #!/usr/bin/env bash
@@ -53,6 +67,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
   <string>DeskFlow Coach</string>
   <key>CFBundleIdentifier</key>
   <string>com.deskflow.coach</string>
+  <key>CFBundleIconFile</key>
+  <string>app_icon</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
