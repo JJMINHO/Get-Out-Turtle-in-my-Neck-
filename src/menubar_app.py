@@ -1,6 +1,7 @@
 """
 macOS menu bar widget with minimal controls.
 """
+import os
 import threading
 
 import rumps
@@ -101,10 +102,13 @@ class DeskPoseApp(rumps.App):
         self.stop_item.hidden = not self.is_monitoring
 
     def quit(self, sender):
-        self.refresh_timer.stop()
+        try:
+            self.refresh_timer.stop()
+        except Exception:
+            pass
+
         if self.worker:
-            self.worker.stop()
-            self.worker.set_dashboard(False)
-            self.worker.close_debug_window()
-        import rumps
+            self.worker.shutdown()
+
+        threading.Timer(0.75, lambda: os._exit(0)).start()
         rumps.quit_application()

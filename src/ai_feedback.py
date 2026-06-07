@@ -41,20 +41,20 @@ class AiFeedbackCoach:
 
         now = time.time()
         upcoming_events = self._get_cached_upcoming_events(now)
-        is_triggered = self._check_triggers(context, upcoming_events)
-        if not is_triggered:
+        feedback_mode = self._feedback_mode(context, upcoming_events)
+        if feedback_mode is None:
             with self.lock:
                 self.latest_feedback = None
                 self.last_context_signature = None
             return fallback
 
-        context_signature = self._context_signature(context, upcoming_events)
+        context_signature = self._context_signature(context, upcoming_events, feedback_mode)
 
         with self.lock:
             if self.in_flight:
                 return self.latest_feedback or fallback
 
-            cooldown = self.trigger_cooldown_seconds if is_triggered else self.cooldown_seconds
+            cooldown = self.trigger_cooldown_seconds if feedback_mode == "schedule" else self.cooldown_seconds
             context_changed = context_signature != self.last_context_signature
             should_request = (
                 (self.latest_feedback is None or context_changed)
@@ -63,7 +63,7 @@ class AiFeedbackCoach:
             cached_feedback = self.latest_feedback
 
         if should_request:
-            self._request_async(context, fallback, upcoming_events, context_signature)
+            self._request_async(context, fallback, upcoming_events, context_signature, feedback_mode)
 
         return cached_feedback or fallback
 
@@ -75,12 +75,14 @@ class AiFeedbackCoach:
         self.event_cache_time = now
         return self.event_cache
 
-    def _context_signature(self, context, upcoming_events):
+    def _context_signature(self, context, upcoming_events, feedback_mode):
         event_signature = tuple(
             (event["date"].isoformat(), event["type"], event["priority"])
             for event in upcoming_events[:3]
         )
         return (
+            feedback_mode,
+            self._score_bucket(context.get("performance_score", 0)),
             self._score_bucket(context.get("focus_score", 0)),
             context.get("focus_status"),
             context.get("study_state"),
@@ -96,18 +98,20 @@ class AiFeedbackCoach:
         except (TypeError, ValueError):
             return 0
 
-    def _check_triggers(self, context, upcoming_events):
+    def _feedback_mode(self, context, upcoming_events):
+        if self._has_schedule_pressure(upcoming_events) and self._has_focus_or_work_concern(context):
+            return "schedule"
+        return "general"
+
+    def _has_schedule_pressure(self, upcoming_events):
         today = datetime.now().date()
-        has_schedule_pressure = False
         for event in upcoming_events:
             days_left = (event["date"] - today).days
             if days_left <= 1 or (days_left <= 3 and event.get("priority") == "high"):
-                has_schedule_pressure = True
-                break
+                return True
+        return False
 
-        if not has_schedule_pressure:
-            return False
-
+    def _has_focus_or_work_concern(self, context):
         focus_score = context.get("focus_score", 100)
         consecutive_distracted = context.get("consecutive_distracted_seconds", 0)
         focus_status = context.get("focus_status")
@@ -124,7 +128,7 @@ class AiFeedbackCoach:
 
         return False
 
-    def _request_async(self, context, fallback, upcoming_events, context_signature):
+    def _request_async(self, context, fallback, upcoming_events, context_signature, feedback_mode):
         with self.lock:
             self.in_flight = True
             self.last_request_time = time.time()
@@ -132,14 +136,14 @@ class AiFeedbackCoach:
 
         thread = threading.Thread(
             target=self._request_feedback,
-            args=(context, fallback, upcoming_events),
+            args=(context, fallback, upcoming_events, feedback_mode),
             daemon=True,
         )
         thread.start()
 
-    def _request_feedback(self, context, fallback, upcoming_events):
+    def _request_feedback(self, context, fallback, upcoming_events, feedback_mode):
         try:
-            prompt = self._build_prompt(context, upcoming_events)
+            prompt = self._build_prompt(context, upcoming_events, feedback_mode)
             if self.openai_api_key:
                 try:
                     feedback = self._call_openai(prompt)
@@ -160,8 +164,31 @@ class AiFeedbackCoach:
             with self.lock:
                 self.in_flight = False
 
-    def _build_prompt(self, context, upcoming_events):
+    def _build_prompt(self, context, upcoming_events, feedback_mode):
         event_text = self._format_events(upcoming_events)
+        performance_score = self._safe_float(context.get("performance_score"))
+        performance_instruction = self._performance_instruction(performance_score)
+        if feedback_mode == "schedule":
+            mode_instruction = (
+                "Use the nearby exam, deadline, or project as the main reason for the nudge. "
+                "Connect the user's current focus/work data to one immediate next action."
+            )
+            examples = """
+- 내일 제출이 있으니 지금은 가장 중요한 부분 하나만 골라 20분 동안 처리하세요.
+- 마감이 가까운데 집중이 흔들리고 있습니다. 지금은 자료를 더 찾지 말고 작성 중인 부분부터 마무리하세요.
+- 시험이 가까우니 지금은 범위를 넓히지 말고 헷갈리는 항목 하나만 바로 정리하세요.
+""".strip()
+        else:
+            mode_instruction = (
+                "No urgent schedule is driving this message. "
+                "Give a general work or study motivation nudge based on the user's current work rhythm."
+            )
+            examples = """
+- 지금은 시작을 늦추지 말고 20분 안에 끝낼 수 있는 일 하나만 고르세요.
+- 오늘은 완벽하게 하려 하지 말고 바로 끝낼 수 있는 작은 단위 하나부터 처리하세요.
+- 흐름이 끊기기 전에 가장 쉬운 작업 하나를 정해 바로 손을 대세요.
+""".strip()
+
         return f"""
 You write Korean feedback for a schedule-aware focus dashboard.
 Write exactly 1 short Korean sentence in polite 존댓말.
@@ -172,9 +199,7 @@ Do not use labels like "피드백:", "코치:", "주의:", or markdown.
 Include one immediate action the user should take now.
 
 Good examples:
-- 내일 제출이 있으니 지금은 가장 중요한 부분 하나만 골라 20분 동안 처리하세요.
-- 마감이 가까운데 집중이 흔들리고 있습니다. 지금은 자료를 더 찾지 말고 작성 중인 부분부터 마무리하세요.
-- 시험이 가까우니 지금은 범위를 넓히지 말고 헷갈리는 항목 하나만 바로 정리하세요.
+{examples}
 
 Avoid these patterns:
 - Panic or doom warnings.
@@ -182,10 +207,21 @@ Avoid these patterns:
 - Self-introductions, labels, markdown, or dramatic slogans.
 - Stiff expressions like "제출용 핵심 작업", "진도를 내십시오", "형태로 먼저", "준비를 넓히지 말고".
 
+Feedback mode:
+{feedback_mode}
+
+Mode instruction:
+{mode_instruction}
+
+Performance score guidance:
+- Current performance score: {performance_score:.1f} / 100.
+- {performance_instruction}
+
 Current work data:
 - Day boundary starts at 05:00.
 - Today's actual work time: {context.get("today_time_text")}
 - Current session time: {context.get("session_time_text")}
+- Performance score: {performance_score:.1f} / 100
 - Focus score: {context.get("focus_score")} / 100 ({context.get("focus_status")})
 - Focused time in this session: {context.get("focused_time_text")}
 - Best focus streak: {context.get("max_focused_time_text")}
@@ -201,6 +237,31 @@ Upcoming exams, deadlines, or projects:
 
 Return only the feedback text.
 """.strip()
+
+    def _performance_instruction(self, performance_score):
+        if performance_score < 40:
+            return (
+                "The score is poor, so be firmer and more urgent, but still polite. "
+                "Tell the user to stop spreading attention and start one tiny concrete task now."
+            )
+        if performance_score < 65:
+            return (
+                "The score is weak, so use a clear corrective nudge. "
+                "Point the user toward one short, finishable work block."
+            )
+        if performance_score < 80:
+            return (
+                "The score is acceptable but not strong, so encourage preserving momentum with one focused action."
+            )
+        return (
+            "The score is strong, so keep the tone steady and reinforce continuing the current rhythm."
+        )
+
+    def _safe_float(self, value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _call_openai(self, prompt):
         body = {
@@ -300,14 +361,9 @@ Return only the feedback text.
     def _ensure_calendar_events_csv(self):
         os.makedirs(os.path.dirname(config.CALENDAR_EVENTS_CSV_PATH), exist_ok=True)
         if not os.path.exists(config.CALENDAR_EVENTS_CSV_PATH):
-            today = datetime.now()
-            exam_date = (today + timedelta(days=5)).strftime("%Y-%m-%d")
-            project_date = (today + timedelta(days=7)).strftime("%Y-%m-%d")
             with open(config.CALENDAR_EVENTS_CSV_PATH, "w", newline="", encoding="utf-8") as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(["date", "title", "type", "priority"])
-                writer.writerow([exam_date, "운영체제 기말고사", "exam", "high"])
-                writer.writerow([project_date, "프로젝트 제출", "deadline", "high"])
 
     def _format_events(self, events):
         if not events:

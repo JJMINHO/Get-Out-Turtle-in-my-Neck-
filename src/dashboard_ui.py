@@ -4,10 +4,11 @@ Healthcare-style dashboard UI for the live posture analysis view.
 import calendar
 import csv
 import os
+import tkinter as tk
 from datetime import datetime
 
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageTk
 import cv2
 
 import src.config as config
@@ -154,7 +155,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     def current_daily_score():
         now = datetime.now().timestamp()
-        if now - daily_score_cache["updated_at"] >= 5:
+        if now - daily_score_cache["updated_at"] >= 1:
             current_stats = latest_stats["value"] or None
             if current_stats and not current_stats.get("is_running", False):
                 current_stats = None
@@ -164,6 +165,13 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             )
             daily_score_cache["updated_at"] = now
         return daily_score_cache["report"]
+
+    def daily_score_color(score):
+        if score < 50:
+            return COLORS["danger"]
+        if score < 75:
+            return COLORS["caution"]
+        return COLORS["normal"]
 
     def add_metric_bar(parent, label, value, color, max_value=1.0):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1308,7 +1316,10 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
             return
 
         if not camera_view_enabled.get():
-            video_label.configure(image=None, text="Camera view hidden")
+            try:
+                clear_camera_image("Camera view hidden")
+            except NameError:
+                pass
             camera_card.pack_forget()
             side_panel.pack_forget()
             side_panel.configure(width=560)
@@ -1344,13 +1355,14 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     video_shell = ctk.CTkFrame(camera_card, fg_color="#F8FAFC", corner_radius=16)
     video_shell.pack(fill="both", expand=True, padx=18, pady=(0, 18))
 
-    video_label = ctk.CTkLabel(
+    camera_canvas = tk.Canvas(
         video_shell,
-        text="Waiting for camera...",
-        font=(FONT_FAMILY, 16),
-        text_color=COLORS["text_sub"],
+        bg="#F8FAFC",
+        bd=0,
+        highlightthickness=0,
+        relief="flat",
     )
-    video_label.pack(expand=True, fill="both", padx=12, pady=12)
+    camera_canvas.pack(expand=True, fill="both", padx=12, pady=12)
 
     side_panel = ctk.CTkScrollableFrame(content, fg_color="transparent", width=520)
     side_panel.pack(side="right", fill="both", expand=True)
@@ -1444,6 +1456,23 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
     )
     daily_score_detail.pack(anchor="w", padx=22, pady=(0, 18))
 
+    def refresh_daily_widgets(report=None):
+        report = report or current_daily_score()
+        today_timer.configure(text=f"{report['date']} · {_format_seconds(report['study_seconds'])}")
+        daily_value.configure(text=_format_seconds(report["study_seconds"]))
+        focus_time_value.configure(text=_format_seconds(report["focused_seconds"]))
+        daily_score_value.configure(
+            text=f"{report['daily_score']:.1f}",
+            text_color=daily_score_color(report["daily_score"]),
+        )
+        daily_score_detail.configure(
+            text=(
+                f"집중 {report['focus_part']:.1f}"
+                f"  업무/학습량 {report['time_part']:.1f}"
+                f"  자세 {report['quality_part']:.1f}"
+            )
+        )
+
     feedback_card = _create_card(side_panel, fill="both", expand=True)
     feedback_card.configure(height=150)
     ctk.CTkLabel(feedback_card, text="Feedback", font=FONT_SECTION, text_color=COLORS["text_sub"]).pack(
@@ -1489,6 +1518,41 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
     latest_image = {"value": None}
 
+    def camera_canvas_size():
+        width = max(camera_canvas.winfo_width(), 320)
+        height = max(camera_canvas.winfo_height(), 240)
+        return width, height
+
+    def clear_camera_image(message):
+        width, height = camera_canvas_size()
+        camera_canvas.delete("all")
+        latest_image["value"] = None
+        camera_canvas.create_text(
+            width // 2,
+            height // 2,
+            text=message,
+            fill=COLORS["text_sub"],
+            font=(FONT_FAMILY, 16),
+            anchor="center",
+        )
+
+    def show_camera_frame(frame):
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        display_size = _fit_image_size(video_shell, img.width, img.height)
+        resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+        resized = img.resize(display_size, resampling)
+        width, height = camera_canvas_size()
+        camera_canvas.delete("all")
+        latest_image["value"] = ImageTk.PhotoImage(resized, master=app)
+        camera_canvas.create_image(
+            width // 2,
+            height // 2,
+            image=latest_image["value"],
+            anchor="center",
+        )
+
+    clear_camera_image("Waiting for camera...")
+
     def update():
         try:
             if command_poller is not None:
@@ -1529,10 +1593,8 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
                                 camera_message = "Camera unavailable. Check macOS Camera permission."
                             elif not is_studying["value"]:
                                 camera_message = "Waiting for camera..."
-                            video_label.configure(
-                                image=None,
-                                text=camera_message,
-                            )
+                            clear_camera_image(camera_message)
+                    refresh_daily_widgets()
                     app.after(33, update)
                     return
 
@@ -1542,36 +1604,14 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
                 if frame is not None:
                     if camera_view_enabled.get():
-                        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                        display_size = _fit_image_size(video_shell, img.width, img.height)
-                        latest_image["value"] = ctk.CTkImage(light_image=img, dark_image=img, size=display_size)
-                        video_label.configure(image=latest_image["value"], text="")
+                        show_camera_frame(frame)
                     else:
-                        video_label.configure(image=None, text="Camera view hidden")
+                        clear_camera_image("Camera view hidden")
                     camera_state.configure(text="Analyzing")
 
                 timer.configure(text=stats.get("time_str", "00:00:00"))
-                today_seconds = stats.get("today_time", 0)
-                current_study_day = stats.get("study_day", study_day_string())
-                today_timer.configure(text=f"{current_study_day} · {_format_seconds(today_seconds)}")
-                daily_value.configure(text=_format_seconds(today_seconds))
-                focused_time = stats.get("focused_time", 0)
-                focus_time_value.configure(text=_format_seconds(focused_time))
                 daily_report = current_daily_score()
-                daily_score_color = COLORS["normal"] if daily_report["daily_score"] >= 75 else COLORS["caution"]
-                if daily_report["daily_score"] < 50:
-                    daily_score_color = COLORS["danger"]
-                daily_score_value.configure(
-                    text=f"{daily_report['daily_score']:.1f}",
-                    text_color=daily_score_color,
-                )
-                daily_score_detail.configure(
-                    text=(
-                        f"집중 {daily_report['focus_part']:.1f}"
-                        f"  업무/학습량 {daily_report['time_part']:.1f}"
-                        f"  자세 {daily_report['quality_part']:.1f}"
-                    )
-                )
+                refresh_daily_widgets(daily_report)
                 is_studying["value"] = bool(stats.get("is_running", True))
                 start_button.configure(
                     text="중지" if is_studying["value"] else "시작",
@@ -1616,6 +1656,11 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
 
         except Exception as exc:
             print("Dashboard update loop error:", exc)
+            if "image" in str(exc):
+                try:
+                    clear_camera_image("Reconnecting camera view...")
+                except Exception:
+                    pass
 
         app.after(33, update)
 
@@ -1626,6 +1671,7 @@ def run_dashboard(data_queue, command_queue=None, command_poller=None, on_close_
         app.destroy()
 
     app.protocol("WM_DELETE_WINDOW", on_close)
+    refresh_daily_widgets()
     app.after(33, update)
     app.mainloop()
 
@@ -1642,7 +1688,7 @@ def run_dashboard_app(stop_worker_on_close=True):
     worker.show_dashboard = True
     worker.dashboard_queue = data_queue
     worker.dashboard_command_queue = command_queue
-    worker.start()
+    data_queue.put({"camera_state": "Ready", "is_running": False})
 
     def poll_commands():
         worker.handle_dashboard_commands()

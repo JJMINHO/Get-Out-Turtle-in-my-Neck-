@@ -3,6 +3,7 @@ Background thread for camera capture and running the analysis loop.
 """
 import cv2
 import csv
+import gc
 import numpy as np
 import os
 import subprocess
@@ -49,6 +50,8 @@ class CameraWorker:
         self.score_count = 0
         self.last_counted_second = None
         self.thread = None
+        self.cap = None
+        self.camera_lock = threading.Lock()
         self.ui_callback = ui_callback
 
         self.pose_analyzer = None
@@ -80,8 +83,20 @@ class CameraWorker:
 
     def start(self):
         if not self.is_running:
+            if self.thread is not None:
+                self.is_running = False
+                self.thread.join(timeout=3.0)
+                if self.thread.is_alive():
+                    self._release_active_camera()
+                    self.thread.join(timeout=2.0)
+                if self.thread.is_alive():
+                    self._send_dashboard_status("Stopping previous camera session", is_running=False)
+                    return
+                self.thread = None
+
             self._send_dashboard_status("Starting", is_running=True)
             self.posture_calculator.reset_calibration()
+            self.focus_calculator = FocusScoreCalculator()
             if self.eye_analyzer is not None:
                 self.eye_analyzer.reset()
             self.session_start_time = int(time.time())
@@ -128,8 +143,13 @@ class CameraWorker:
     def stop(self):
         self.is_running = False
         if self.thread:
-            self.thread.join(timeout=2.0)
-            self.thread = None
+            self.thread.join(timeout=3.0)
+            if self.thread.is_alive():
+                self._release_active_camera()
+                self.thread.join(timeout=3.0)
+            if not self.thread.is_alive():
+                self.thread = None
+                time.sleep(0.25)
 
     def pause(self):
         """Pause analysis while keeping the dashboard window available."""
@@ -164,13 +184,74 @@ class CameraWorker:
                 self.dashboard_process.start()
         else:
             print("Dashboard window disabled.")
-            if self.dashboard_process is not None and self.dashboard_process.is_alive():
-                if self.dashboard_queue:
-                    self.dashboard_queue.put("QUIT")
-                self.dashboard_process.join(timeout=2)
+            self._stop_dashboard_process()
             self.dashboard_process = None
             self.dashboard_queue = None
             self.dashboard_command_queue = None
+
+    def shutdown(self):
+        """Stop camera analysis, child dashboard process, and OpenCV windows."""
+        self.is_running = False
+        if self.thread is not None and threading.current_thread() is not self.thread:
+            self.thread.join(timeout=3.0)
+            if self.thread.is_alive():
+                self._release_active_camera()
+                self.thread.join(timeout=2.0)
+            if not self.thread.is_alive():
+                self.thread = None
+
+        self.show_dashboard = False
+        self._stop_dashboard_process()
+        self.dashboard_process = None
+        self.dashboard_queue = None
+        self.dashboard_command_queue = None
+        self.close_debug_window()
+
+    def _stop_dashboard_process(self):
+        process = self.dashboard_process
+        if process is None:
+            self._close_dashboard_queues()
+            return
+
+        if process.is_alive():
+            try:
+                if self.dashboard_queue is not None:
+                    self.dashboard_queue.put("QUIT")
+            except Exception as exc:
+                print(f"Could not notify dashboard to quit: {exc}")
+            process.join(timeout=2.0)
+
+        if process.is_alive():
+            print("Dashboard did not exit in time; terminating.")
+            process.terminate()
+            process.join(timeout=1.0)
+
+        if process.is_alive():
+            print("Dashboard still alive; killing.")
+            try:
+                process.kill()
+            except AttributeError:
+                pass
+            process.join(timeout=1.0)
+
+        self._close_dashboard_queues()
+
+    def _close_dashboard_queues(self):
+        for queue_obj in (self.dashboard_queue, self.dashboard_command_queue):
+            if queue_obj is None:
+                continue
+            try:
+                queue_obj.close()
+            except AttributeError:
+                pass
+            except Exception as exc:
+                print(f"Could not close dashboard queue: {exc}")
+            try:
+                queue_obj.join_thread()
+            except AttributeError:
+                pass
+            except Exception:
+                pass
 
     def reset_calibration(self):
         self.posture_calculator.reset_calibration()
@@ -186,14 +267,25 @@ class CameraWorker:
             self.is_running = False
             self._send_dashboard_status("Camera unavailable", is_running=False)
             return
+        self._set_active_camera(cap)
 
         last_log_time = 0
+        failed_frame_reads = 0
 
         while self.is_running:
-            success, frame = cap.read()
+            try:
+                success, frame = cap.read()
+            except Exception as exc:
+                print(f"Failed to read frame: {exc}")
+                break
             if not success:
+                failed_frame_reads += 1
+                if failed_frame_reads <= 12:
+                    time.sleep(0.08)
+                    continue
                 print("Failed to read frame.")
                 break
+            failed_frame_reads = 0
 
             frame = cv2.flip(frame, 1)
             height, width, _ = frame.shape
@@ -330,6 +422,7 @@ class CameraWorker:
                 
                 avg_p = int(self.score_sum_p / self.score_count) if self.score_count > 0 else 0
                 avg_f = int(self.score_sum_f / self.score_count) if self.score_count > 0 else 0
+                performance_score = self._current_performance_score(session_snapshot)
 
                 posture_feedback = self._posture_feedback(
                     p_status,
@@ -349,12 +442,13 @@ class CameraWorker:
                     face_detected,
                     drowsy,
                 )
-                schedule_feedback = self.ai_feedback_coach.get_feedback(
+                api_feedback = self.ai_feedback_coach.get_feedback(
                     {
                         "today_time_text": self._format_seconds(session_snapshot["today_seconds"]),
                         "session_time_text": time_str,
                         "posture_score": int(p_score),
                         "posture_status": p_status,
+                        "performance_score": performance_score,
                         "focus_score": int(f_score),
                         "focus_status": f_status,
                         "focused_time_text": self._format_seconds(self.focused_time),
@@ -370,7 +464,7 @@ class CameraWorker:
                     },
                     "",
                 )
-                final_feedback = self._merge_feedback(local_feedback, schedule_feedback)
+                final_feedback = self._merge_feedback(local_feedback, api_feedback)
 
                 stats = {
                     "time_str": time_str,
@@ -380,6 +474,7 @@ class CameraWorker:
                     "is_running": self.is_running,
                     "avg_p": avg_p,
                     "avg_f": avg_f,
+                    "performance_score": performance_score,
                     "posture_score": int(p_score),
                     "posture_status": p_status,
                     "neck_angle": float(neck_angle),
@@ -412,11 +507,38 @@ class CameraWorker:
 
             time.sleep(config.UPDATE_INTERVAL_SECONDS)
 
-        cap.release()
+        self._release_active_camera(cap)
         self.study_event_segmenter.close()
         self.study_session.finalize()
         self._send_dashboard_status("Stopped", is_running=False)
         cv2.destroyAllWindows()
+
+    def _set_active_camera(self, cap):
+        with self.camera_lock:
+            self.cap = cap
+
+    def _release_active_camera(self, expected_cap=None):
+        cap_to_release = None
+        with self.camera_lock:
+            if expected_cap is None:
+                cap_to_release = self.cap
+                self.cap = None
+            elif self.cap is expected_cap:
+                cap_to_release = self.cap
+                self.cap = None
+
+        if cap_to_release is not None:
+            try:
+                cap_to_release.release()
+            except Exception as exc:
+                print(f"Could not release camera: {exc}")
+            try:
+                del cap_to_release
+                gc.collect()
+                cv2.waitKey(1)
+            except Exception:
+                pass
+            time.sleep(0.35)
 
     def _handle_dashboard_commands(self):
         if self.dashboard_command_queue is None:
@@ -463,20 +585,20 @@ class CameraWorker:
         if posture_status == "No Pose":
             return "상체가 카메라에 보이도록 앉아주세요."
         if shoulder_drop_delta >= config.SLOUCH_DROP_BAD:
-            return f"어깨가 기준보다 많이 내려갔습니다. 어깨 하강 지표 {shoulder_drop_delta:.2f}라서 허리를 세우고 가슴을 살짝 펴주세요."
+            return "어깨가 많이 내려가 있습니다. 허리를 세우고 가슴을 살짝 펴주세요."
         if head_offset_delta >= config.FACE_SHOULDER_RATIO_BAD:
-            return f"머리가 앞으로 많이 나와 있습니다. 전방 이동 지표 {head_offset_delta:.2f}라서 턱을 당기고 귀를 어깨선에 맞춰주세요."
+            return "머리가 앞으로 나와 있습니다. 턱을 당기고 귀를 어깨선에 맞춰주세요."
         if slouch_risk == "High":
             return "어깨선이 기준보다 많이 낮아졌습니다. 허리를 세우고 가슴을 살짝 펴주세요."
         if head_offset_delta >= config.FACE_SHOULDER_RATIO_WARNING:
-            return f"목이 앞으로 나오는 흐름이 보입니다. 전방 이동 지표 {head_offset_delta:.2f}라서 턱을 살짝 당겨주세요."
+            return "목이 앞으로 나오고 있습니다. 턱을 살짝 당기고 화면을 정면으로 봐주세요."
         if slouch_risk == "Medium":
             return "어깨가 조금 내려갔습니다. 허리를 곧게 세워주세요."
         if posture_status == "Good":
-            return f"현재 자세가 안정적입니다. 자세 점수 {posture_score}점을 유지하세요."
+            return "현재 자세가 안정적입니다. 이 자세를 유지하세요."
         if posture_status == "Warning":
-            return f"자세 점수 {posture_score}점입니다. 턱을 살짝 당기고 허리를 세워 기준 자세로 돌아오세요."
-        return f"자세 점수 {posture_score}점입니다. 귀와 어깨가 일직선이 되도록 바로 조정하세요."
+            return "자세가 조금 흐트러졌습니다. 턱을 살짝 당기고 허리를 세워주세요."
+        return "자세가 많이 무너졌습니다. 귀와 어깨가 일직선이 되도록 바로 조정하세요."
 
     def _combined_feedback(
         self,
@@ -506,18 +628,18 @@ class CameraWorker:
             return focus_feedback
         return posture_feedback
 
-    def _merge_feedback(self, local_feedback, schedule_feedback):
+    def _merge_feedback(self, local_feedback, api_feedback):
         local_feedback = (local_feedback or "").strip()
-        schedule_feedback = (schedule_feedback or "").strip()
-        if not schedule_feedback:
+        api_feedback = (api_feedback or "").strip()
+        if not api_feedback:
             return local_feedback
-        if schedule_feedback == local_feedback:
+        if api_feedback == local_feedback:
             return local_feedback
-        if local_feedback and local_feedback in schedule_feedback:
-            return schedule_feedback
-        if schedule_feedback and schedule_feedback in local_feedback:
+        if local_feedback and local_feedback in api_feedback:
+            return api_feedback
+        if api_feedback and api_feedback in local_feedback:
             return local_feedback
-        return f"{local_feedback}\n\n{schedule_feedback}".strip()
+        return f"{local_feedback}\n\n{api_feedback}".strip()
 
     def _focus_feedback(
         self,
@@ -539,9 +661,41 @@ class CameraWorker:
             return "집중이 20초 이상 흔들리고 있습니다. 알림이나 다른 창을 치우고 지금 작업 하나만 보세요."
         if focus_status == "Distracted" or study_state == "Distracted" or focus_score < config.FOCUSED_THRESHOLD:
             if gaze_zone in ("Left", "Right", "Up", "Down"):
-                return f"시선이 {gaze_zone} 방향으로 자주 빠집니다. 화면 중앙을 보고 다음 10분만 이어가세요."
-            return f"Focus Score가 {focus_score}점입니다. 지금은 화면 중앙을 보고 한 작업만 이어가세요."
+                return "시선이 자주 벗어나고 있습니다. 화면 중앙을 보고 다음 10분만 이어가세요."
+            return "집중이 조금 흔들리고 있습니다. 화면 중앙을 보고 한 작업만 이어가세요."
         return None
+
+    def _current_performance_score(self, session_snapshot):
+        session_seconds = max(0, int(session_snapshot.get("session_seconds", 0)))
+        today_seconds = max(0, int(session_snapshot.get("today_seconds", 0)))
+        if session_seconds <= 0:
+            return 0.0
+
+        focused_seconds = max(0, int(session_snapshot.get("focused_seconds", 0)))
+        good_posture_seconds = max(0, int(session_snapshot.get("good_posture_seconds", 0)))
+        away_seconds = max(0, int(session_snapshot.get("away_seconds", 0)))
+        no_face_seconds = max(0, int(session_snapshot.get("no_face_seconds", 0)))
+        drowsy_seconds = max(0, int(session_snapshot.get("drowsy_seconds", 0)))
+
+        focus_density = self._safe_ratio(focused_seconds, session_seconds)
+        activity_ratio = min((today_seconds / 60.0) / 240.0, 1.0)
+        good_posture_ratio = self._safe_ratio(good_posture_seconds, session_seconds)
+        stable_presence_ratio = max(
+            0.0,
+            1.0 - self._safe_ratio(away_seconds + no_face_seconds + drowsy_seconds, session_seconds),
+        )
+        quality_ratio = (
+            0.45 * focus_density
+            + 0.35 * good_posture_ratio
+            + 0.20 * stable_presence_ratio
+        )
+        score = min(100.0, focus_density * 40 + activity_ratio * 30 + quality_ratio * 30)
+        return round(score, 1)
+
+    def _safe_ratio(self, numerator, denominator):
+        if denominator <= 0:
+            return 0.0
+        return max(0.0, min(float(numerator) / float(denominator), 1.0))
 
     def _format_seconds(self, seconds):
         hours, remainder = divmod(int(seconds), 3600)
@@ -671,6 +825,8 @@ class CameraWorker:
             print(f"Could not play alert sound: {exc}")
 
     def _open_camera(self):
+        # Give AVFoundation a brief moment to finish releasing the previous session.
+        time.sleep(0.2)
         backend = None
         if getattr(config, "CAMERA_BACKEND", None) == "avfoundation":
             backend = getattr(cv2, "CAP_AVFOUNDATION", None)
@@ -686,20 +842,36 @@ class CameraWorker:
                 indices.append(idx)
 
         last_error = None
-        for camera_index in indices:
-            try:
-                cap = cv2.VideoCapture(camera_index, backend) if backend is not None else cv2.VideoCapture(camera_index)
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+        for pass_index in range(2):
+            for camera_index in indices:
+                cap = None
+                try:
+                    cap = cv2.VideoCapture(camera_index, backend) if backend is not None else cv2.VideoCapture(camera_index)
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
 
-                if cap.isOpened():
-                    print(f"Camera opened: index={camera_index} backend={config.CAMERA_BACKEND}")
-                    return cap
+                    if not cap.isOpened():
+                        last_error = f"cap.isOpened() == False (index={camera_index})"
+                    elif self._camera_has_readable_frame(cap):
+                        print(f"Camera opened: index={camera_index} backend={config.CAMERA_BACKEND}")
+                        opened_cap = cap
+                        cap = None
+                        return opened_cap
+                    else:
+                        last_error = f"camera opened but no readable frame (index={camera_index})"
+                except Exception as exc:
+                    last_error = f"{type(exc).__name__}: {exc} (index={camera_index})"
+                finally:
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+                        del cap
+                        gc.collect()
 
-                last_error = f"cap.isOpened() == False (index={camera_index})"
-                cap.release()
-            except Exception as exc:
-                last_error = f"{type(exc).__name__}: {exc} (index={camera_index})"
+            if pass_index == 0:
+                time.sleep(0.6)
 
         print("Error: Could not open any camera index.")
         print("Tried indices:", indices)
@@ -709,6 +881,14 @@ class CameraWorker:
         print("Check macOS permissions: System Settings -> Privacy & Security -> Camera.")
         print("Also ensure no other app is using the camera (Zoom/Meet/Photo Booth, etc).")
         return None
+
+    def _camera_has_readable_frame(self, cap):
+        for _attempt in range(10):
+            success, frame = cap.read()
+            if success and frame is not None:
+                return True
+            time.sleep(0.08)
+        return False
 
     def show_latest_debug_frame(self):
         with self.debug_frame_lock:
