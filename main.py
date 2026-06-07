@@ -104,6 +104,7 @@ def main():
         from src.config import POSE_MODEL_PATH, FACE_MODEL_PATH
         print(f"POSE_MODEL_PATH: {POSE_MODEL_PATH} (Exists: {os.path.exists(POSE_MODEL_PATH)})", flush=True)
         print(f"FACE_MODEL_PATH: {FACE_MODEL_PATH} (Exists: {os.path.exists(FACE_MODEL_PATH)})", flush=True)
+        _check_source_mediapipe_runtime()
 
         if sys.platform == "darwin":
             from src.camera_worker import CameraWorker
@@ -123,6 +124,35 @@ def main():
             log_file.flush()
         except Exception:
             pass
+
+
+def _check_source_mediapipe_runtime():
+    """Fail early when source-run MediaPipe cannot support posture analysis."""
+    if getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return
+
+    try:
+        import mediapipe as mp
+    except Exception as exc:
+        print(f"MediaPipe import failed: {exc}", file=sys.stderr, flush=True)
+        return
+
+    if hasattr(mp, "solutions"):
+        return
+
+    message = (
+        "Source 실행에서 posture 기능을 사용하려면 Python 3.12 환경이 필요합니다.\n"
+        "현재 MediaPipe에는 legacy solutions API가 없어 macOS 터미널 실행에서 posture analyzer가 안정적으로 동작하지 않습니다.\n"
+        "다음 명령으로 다시 실행하세요:\n"
+        "  python3.12 -m venv .venv\n"
+        "  source .venv/bin/activate\n"
+        "  pip install --upgrade pip\n"
+        "  pip install -r requirements.txt\n"
+        "  python main.py\n"
+        "DMG 앱은 이 문제 없이 정상 동작합니다."
+    )
+    print(message, file=sys.stderr, flush=True)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -227,6 +227,22 @@ deskpose-coach/
 * **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
 * macOS에서는 DMG 실행과 소스 실행 모두 위 경로를 사용합니다.
 
+### Source 실행 방법
+
+macOS에서 source로 실행할 때 posture 기능까지 사용하려면 Python 3.12 환경을 권장합니다.
+
+```bash
+git clone https://github.com/JJMINHO/DeskFlow_Coach.git
+cd DeskFlow_Coach
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python main.py
+```
+
+Python 3.13 환경에서는 MediaPipe legacy solutions API가 없어 source 실행 시 posture analyzer가 정상 동작하지 않을 수 있습니다. 일반 사용자는 DMG 배포판 실행을 권장합니다.
+
 ## 데이터 및 로그
 
 | 파일 | 설명 |
