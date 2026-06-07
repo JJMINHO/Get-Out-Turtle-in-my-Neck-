@@ -209,22 +209,30 @@ deskpose-coach/
 
 ## Getting Started
 
-이 프로젝트는 두 가지 방법으로 실행할 수 있습니다. 일반 사용자는 **Option 1(배포판 다운로드)**을 권장하며, 소스코드를 수정하거나 개발하고 싶으신 분은 **Option 2(소스코드 직접 실행)**를 사용해 주세요.
+일반 사용자는 가상환경 구축 없이 즉시 실행이 가능한 **DMG 배포판 설치**를 권장합니다.
 
-### Option 1: DMG 배포판 실행 (추천)
+### 📥 DMG 배포판 실행 방법 (권장)
+
 1. **앱 다운로드**: [📥 macOS용 DeskFlow_Coach.dmg 다운로드](https://drive.google.com/file/d/1xSfHXuZ1yc1vdg8pzYM8dovkzcD3N2AI/view?usp=sharing)
-2. **설치**: 다운로드한 `.dmg` 파일을 열어 `DeskFlow Coach` 아이콘을 `Applications(응용 프로그램)` 폴더로 드래그 앤 드롭합니다.
+2. **설치**: 다운로드한 `.dmg` 파일을 더블 클릭하여 열고, `DeskFlow Coach` 아이콘을 `Applications(응용 프로그램)` 폴더로 드래그 앤 드롭합니다.
 3. **최초 실행 보안 승인 (macOS Gatekeeper 우회)**:
-   - 애플 개발자 인증을 거치지 않은 앱으로, 최초 실행 시 차단 경고가 발생합니다.
-   - 설치된 앱 아이콘을 마우스 **우클릭(또는 Control + 클릭)** 한 뒤 **[열기]**를 선택하여 실행하거나, `시스템 설정 -> 개인정보 보호 및 보안 -> 탭 하단에서 **"그래도 열기(Open Anyway)"**를 클릭해 주시면 실행됩니다.
-4. **카메라 권한 승인**: 앱을 실행한 후 표시되는 카메라 접근 권한 요청 팝업에서 **[허용]**을 선택합니다.
-5. **AI 피드백 활성화 (선택)**: `~/Library/Application Support/DeskFlow Coach/` 폴더 내에 `.env` 파일을 복사해 넣고 `OPENAI_API_KEY=본인키`를 입력해 주면 AI 코칭 멘트가 동작합니다.
+   - 애플 개발자 등록을 거치지 않은 비인증 인하우스 빌드 앱이므로, 최초 실행 시 차단 메시지가 나타납니다.
+   - 이를 실행하려면 앱 아이콘을 마우스 **우클릭(또는 Control + 클릭)** 한 뒤 **[열기]**를 선택하여 실행해 주시거나, `시스템 설정 -> 개인정보 보호 및 보안 -> 일반` 탭 하단에서 **"확인 없이 열기(Open Anyway)"**를 클릭해 주시면 정상 실행됩니다. (최초 1회만 필요)
+4. **카메라 권한 승인**: 첫 구동 시 나타나는 웹캠 카메라 접근 요청 팝업에서 **[허용]**을 반드시 선택해 주세요.
+5. **AI 피드백 활성화 (선택 사항)**:
+   - OpenAI 코칭 피드백 기능을 사용하시려면, 아래 경로로 폴더를 생성하고 `.env` 파일에 API Key를 작성해 줍니다.
+   - 경로: `~/Library/Application Support/DeskFlow Coach/.env`
+   - 내용 예시: `OPENAI_API_KEY=your-openai-api-key`
+
+* **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
 
 ---
 
-### Option 2: 소스코드 직접 실행 및 빌드 (개발자용)
+## Developer Guide (개발자용)
 
-#### 1. 로컬 소스코드 실행
+소스코드의 직접 수정이나 빌드를 원하는 개발자는 아래 가이드를 참조하세요. (로컬 Mac 환경의 Python 버전, Tkinter 및 AppKit 스레딩 충돌 상태에 따라 소스 구동 시 오작동이 발생할 수 있습니다.)
+
+### 1. 소스코드 클론 및 실행
 ```bash
 # 저장소 클론 및 디렉토리 이동
 git clone https://github.com/JJMINHO/DeskFlow_Coach.git
@@ -237,26 +245,16 @@ pip install -r requirements.txt
 # 앱 실행
 python main.py
 ```
-* **AI 피드백 활성화 (선택)**: 클론된 프로젝트 루트 폴더에 `.env.example` 파일을 `.env`로 복사하여 API Key를 설정해 줍니다.
-* **AI 모델 내장 완비**: 자세 및 얼굴 인식 모델(`.task` 파일)이 저장소에 기본 내장되어 있어, 클론 직후 별도 모델 다운로드 과정 없이 즉시 비전 분석 기능이 정상 작동합니다.
+* **AI 모델**: MediaPipe 얼굴 및 자세 인식 모델(`.task` 파일)은 `assets/` 디렉토리에 기본 내장되어 있습니다.
 
-#### 2. 앱 패키징 및 빌드
+### 2. 패키징 및 빌드
 ```bash
 # macOS .app 번들 빌드
 ./scripts/build_macos_app.sh
 
-# .dmg 디스크 이미지 패키징 (선택)
+# .dmg 디스크 이미지 패키징
 hdiutil create -volname "DeskFlow Coach" -srcfolder "dist/DeskFlow Coach.app" -ov -format UDZO "dist/DeskFlow_Coach.dmg"
 ```
-
----
-
-### 공통 중요 사항
-* **데이터 및 로그 저장 경로**: 
-  - Option 1 (DMG 빌드 앱): `~/Library/Application Support/DeskFlow Coach/`
-  - Option 2 (소스코드 실행): 프로젝트 루트의 `outputs/`
-
----
 
 ## 데이터 및 로그
 
