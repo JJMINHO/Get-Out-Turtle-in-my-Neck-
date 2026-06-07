@@ -14,7 +14,7 @@ APP_NAME = "DeskFlow Coach"
 
 def _data_dir():
     candidates = []
-    if getattr(sys, "frozen", False):
+    if sys.platform == "darwin":
         candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME))
     else:
         candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs"))

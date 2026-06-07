@@ -6,11 +6,11 @@ def load_dotenv():
     dotenv_paths = [
         os.path.abspath(".env"),
         os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", ".env"),
     ]
     if getattr(sys, "frozen", False):
         dotenv_paths.extend([
             os.path.join(os.path.dirname(sys.executable), ".env"),
-            os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", ".env"),
         ])
 
     dotenv_path = None
@@ -54,7 +54,7 @@ def _resource_path(*parts):
 def _data_dir():
     """Return a writable app data directory."""
     candidates = []
-    if getattr(sys, "frozen", False):
+    if sys.platform == "darwin":
         candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME))
     else:
         candidates.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs"))

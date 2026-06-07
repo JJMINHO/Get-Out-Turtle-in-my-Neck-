@@ -12,13 +12,13 @@ def _candidate_env_paths(path):
     paths = [
         os.path.abspath(path),
         os.path.join(os.getcwd(), path),
+        os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", path),
     ]
     if getattr(sys, "frozen", False):
         if hasattr(sys, "_MEIPASS"):
             paths.append(os.path.join(sys._MEIPASS, path))
         paths.extend([
             os.path.join(os.path.dirname(sys.executable), path),
-            os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", path),
         ])
 
     seen = set()

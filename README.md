@@ -202,7 +202,7 @@ deskpose-coach/
 ├── assets/              # app icon and MediaPipe task models
 ├── scripts/             # macOS build script
 ├── src/                 # dashboard, camera worker, CV analyzers, scoring, feedback
-└── outputs/             # source-run logs and CSV data
+└── outputs/             # non-macOS/source fallback data
 ```
 
 ---
@@ -225,6 +225,7 @@ deskpose-coach/
    - 내용 예시: `OPENAI_API_KEY=your-openai-api-key`
 
 * **데이터 및 로그 저장 경로**: `~/Library/Application Support/DeskFlow Coach/`
+* macOS에서는 DMG 실행과 소스 실행 모두 위 경로를 사용합니다.
 
 ## 데이터 및 로그
 
