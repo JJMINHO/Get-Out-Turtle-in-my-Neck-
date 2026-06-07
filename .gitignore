@@ -26,8 +26,8 @@ outputs/*.png
 build/
 dist/
 
-# MediaPipe model assets
-assets/*.task
+# MediaPipe model assets (Include in git for standalone repository cloning)
+# assets/*.task
 
 # Logs
 *.log
