@@ -1,11 +1,12 @@
 # DeskFlow Coach
 
-Python PyQt5 MediaPipe License
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-brightgreen.svg)](https://github.com/JJMINHO/DeskFlow_Coach)
+[![Platform: macOS](https://img.shields.io/badge/Platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
 
 웹캠으로 자세, 화면 집중 흐름, 하루 작업 리듬을 함께 보여주는 macOS 데스크톱 코치입니다.
 
 DeskFlow Coach는 별도 센서 없이 카메라 입력만으로 사용자의 앉은 자세와 화면 주시 상태를 가볍게 분석하고, 이를 Performance Score, 일일 리포트, 캘린더 일정, 메뉴바 위젯으로 연결합니다. 의료용 진단 도구나 정확한 eye tracker가 아니라, 컴퓨터비전 기반의 업무 및 학습 코칭 도구입니다.
-
 
 ---
 
