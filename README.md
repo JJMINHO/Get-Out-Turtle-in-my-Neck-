@@ -241,6 +241,14 @@ python main.py
 
 ---
 
+## Windows Support
+
+Windows terminal mode is currently in progress.
+
+The computer vision pipeline and dashboard are being prepared for Windows terminal execution, but the current release target is macOS. The macOS menu bar widget, `.app` bundle, and DMG packaging remain macOS-only.
+
+---
+
 ## Run the macOS App
 
 빌드된 앱을 실행하려면 다음 파일을 엽니다.

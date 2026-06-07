@@ -51,7 +51,7 @@ def _setup_runtime_logging():
 
 
 def main():
-    """Start the menu bar app, which will automatically spawn the dashboard."""
+    """Start the app with a macOS menu bar, or dashboard-only mode elsewhere."""
     log_file = _setup_runtime_logging()
     try:
         from src.env_loader import load_dotenv
@@ -61,11 +61,15 @@ def main():
         print(f"POSE_MODEL_PATH: {POSE_MODEL_PATH} (Exists: {os.path.exists(POSE_MODEL_PATH)})", flush=True)
         print(f"FACE_MODEL_PATH: {FACE_MODEL_PATH} (Exists: {os.path.exists(FACE_MODEL_PATH)})", flush=True)
 
-        from src.camera_worker import CameraWorker
-        worker = CameraWorker()
-
-        from src.menubar_app import DeskPoseApp
-        DeskPoseApp(worker=worker, auto_show_dashboard=True).run()
+        if sys.platform == "darwin":
+            from src.camera_worker import CameraWorker
+            from src.menubar_app import DeskPoseApp
+            worker = CameraWorker()
+            DeskPoseApp(worker=worker, auto_show_dashboard=True).run()
+        else:
+            print("Non-macOS platform detected; starting dashboard-only mode.", flush=True)
+            from src.dashboard_ui import run_dashboard_app
+            run_dashboard_app(stop_worker_on_close=True)
     except Exception as exc:
         print(f"Error starting application: {exc}", file=sys.stderr, flush=True)
         traceback.print_exc()

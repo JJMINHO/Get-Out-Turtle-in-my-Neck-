@@ -80,9 +80,14 @@ CAMERA_INDEX = 0
 # Try these indices if CAMERA_INDEX fails.
 CAMERA_INDEX_FALLBACKS = [0, 1, 2]
 
-# On macOS, AVFoundation is usually the most reliable OpenCV backend.
-# If None, OpenCV will choose a default backend.
-CAMERA_BACKEND = "avfoundation"  # "avfoundation" or None
+# Platform-specific OpenCV camera backend preference.
+# macOS usually works best with AVFoundation; Windows gets DShow/MSMF fallbacks.
+if sys.platform == "darwin":
+    CAMERA_BACKEND = "avfoundation"
+elif sys.platform.startswith("win"):
+    CAMERA_BACKEND = "dshow"
+else:
+    CAMERA_BACKEND = None
 
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480

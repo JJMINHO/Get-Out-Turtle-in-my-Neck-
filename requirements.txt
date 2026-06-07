@@ -1,7 +1,7 @@
 opencv-python
 mediapipe
 numpy
-rumps
+rumps; sys_platform == "darwin"
 pandas
 matplotlib
 customtkinter
