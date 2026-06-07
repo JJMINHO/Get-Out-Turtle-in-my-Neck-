@@ -14,7 +14,7 @@ APP_NAME = "DeskFlow Coach"
 
 def _data_dir():
     candidates = []
-    if sys.platform == "darwin":
+    if getattr(sys, "frozen", False):
         candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME))
     else:
         candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs"))
@@ -33,55 +33,11 @@ def _data_dir():
     return tempfile.gettempdir()
 
 
-class Tee:
-    """Helper to write to both a file and standard terminal streams."""
-    def __init__(self, file, stream):
-        self.file = file
-        self.stream = stream
-
-    def write(self, data):
-        try:
-            self.file.write(data)
-        except Exception:
-            pass
-        try:
-            self.stream.write(data)
-        except Exception:
-            pass
-
-    def flush(self):
-        try:
-            self.file.flush()
-        except Exception:
-            pass
-        try:
-            self.stream.flush()
-        except Exception:
-            pass
-
-    def reconfigure(self, *args, **kwargs):
-        try:
-            if hasattr(self.stream, "reconfigure"):
-                self.stream.reconfigure(*args, **kwargs)
-            if hasattr(self.file, "reconfigure"):
-                self.file.reconfigure(*args, **kwargs)
-        except Exception:
-            pass
-
-
 def _setup_runtime_logging():
     log_path = os.path.join(_data_dir(), "app.log")
     log_file = open(log_path, "a", encoding="utf-8")
-    
-    if getattr(sys, "frozen", False):
-        # Packaged app redirects everything to app.log only
-        sys.stdout = log_file
-        sys.stderr = log_file
-    else:
-        # Source runs print to both terminal and app.log
-        sys.stdout = Tee(log_file, sys.__stdout__)
-        sys.stderr = Tee(log_file, sys.__stderr__)
-
+    sys.stdout = log_file
+    sys.stderr = log_file
     try:
         sys.stdout.reconfigure(line_buffering=True)
         sys.stderr.reconfigure(line_buffering=True)
@@ -95,7 +51,7 @@ def _setup_runtime_logging():
 
 
 def main():
-    """Start the app with a macOS menu bar, or dashboard-only mode elsewhere."""
+    """Start the menu bar app, which will automatically spawn the dashboard."""
     log_file = _setup_runtime_logging()
     try:
         from src.env_loader import load_dotenv
@@ -104,17 +60,12 @@ def main():
         from src.config import POSE_MODEL_PATH, FACE_MODEL_PATH
         print(f"POSE_MODEL_PATH: {POSE_MODEL_PATH} (Exists: {os.path.exists(POSE_MODEL_PATH)})", flush=True)
         print(f"FACE_MODEL_PATH: {FACE_MODEL_PATH} (Exists: {os.path.exists(FACE_MODEL_PATH)})", flush=True)
-        _check_source_mediapipe_runtime()
 
-        if sys.platform == "darwin":
-            from src.camera_worker import CameraWorker
-            from src.menubar_app import DeskPoseApp
-            worker = CameraWorker()
-            DeskPoseApp(worker=worker, auto_show_dashboard=True).run()
-        else:
-            print("Non-macOS platform detected; starting dashboard-only mode.", flush=True)
-            from src.dashboard_ui import run_dashboard_app
-            run_dashboard_app(stop_worker_on_close=True)
+        from src.camera_worker import CameraWorker
+        worker = CameraWorker()
+
+        from src.menubar_app import DeskPoseApp
+        DeskPoseApp(worker=worker, auto_show_dashboard=True).run()
     except Exception as exc:
         print(f"Error starting application: {exc}", file=sys.stderr, flush=True)
         traceback.print_exc()
@@ -126,47 +77,11 @@ def main():
             pass
 
 
-def _check_source_mediapipe_runtime():
-    """Fail early when source-run MediaPipe cannot support posture analysis."""
-    if getattr(sys, "frozen", False) or sys.platform != "darwin":
-        return
-
-    try:
-        import mediapipe as mp
-    except Exception as exc:
-        print(f"MediaPipe import failed: {exc}", file=sys.stderr, flush=True)
-        return
-
-    if hasattr(mp, "solutions"):
-        return
-
-    message = (
-        "Source 실행에서 posture 기능을 사용하려면 Python 3.12 환경이 필요합니다.\n"
-        "현재 MediaPipe에는 legacy solutions API가 없어 macOS 터미널 실행에서 posture analyzer가 안정적으로 동작하지 않습니다.\n"
-        "다음 명령으로 다시 실행하세요:\n"
-        "  python3.12 -m venv .venv\n"
-        "  source .venv/bin/activate\n"
-        "  pip install --upgrade pip\n"
-        "  pip install -r requirements.txt\n"
-        "  python main.py\n"
-        "DMG 앱은 이 문제 없이 정상 동작합니다."
-    )
-    print(message, file=sys.stderr, flush=True)
-    sys.exit(1)
-
-
 if __name__ == "__main__":
     if sys.platform == 'darwin' and len(sys.argv) > 1 and sys.argv[1].startswith('--multiprocessing-fork'):
         from multiprocessing.spawn import freeze_support
         freeze_support()
         sys.exit(0)
-
-    # Force spawn method on macOS to isolate Tkinter/AppKit UI threads and camera handles from rumps menu bar
-    if sys.platform == 'darwin':
-        try:
-            multiprocessing.set_start_method('spawn', force=True)
-        except Exception:
-            pass
 
     multiprocessing.freeze_support()
     main()

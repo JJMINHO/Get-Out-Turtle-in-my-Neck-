@@ -3,7 +3,6 @@ Face analyzer for extracting face landmarks using MediaPipe Face Mesh.
 """
 import cv2
 import mediapipe as mp
-import os
 import src.config as config
 
 
@@ -13,51 +12,7 @@ class FaceAnalyzer:
         self._available = True
         self._face = None
 
-        if self._init_solutions_face():
-            return
-
-        if os.path.exists(config.FACE_MODEL_PATH) and self._init_tasks_face():
-            return
-
-        self._available = False
-        print(
-            "FaceAnalyzer unavailable. Expected MediaPipe Tasks face model at "
-            f"{config.FACE_MODEL_PATH} or MediaPipe solutions face mesh support."
-        )
-
-    def _init_tasks_face(self):
-        try:
-            from mediapipe.tasks.python import vision
-            from mediapipe.tasks.python.core import base_options
-
-            options = vision.FaceLandmarkerOptions(
-                base_options=base_options.BaseOptions(
-                    model_asset_path=config.FACE_MODEL_PATH,
-                    delegate=base_options.BaseOptions.Delegate.CPU,
-                ),
-                running_mode=vision.RunningMode.IMAGE,
-                num_faces=1,
-                min_face_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
-                min_face_presence_confidence=config.MIN_DETECTION_CONFIDENCE,
-                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
-                output_face_blendshapes=False,
-                output_facial_transformation_matrixes=False,
-            )
-            self._face = vision.FaceLandmarker.create_from_options(options)
-            self._mode = "tasks"
-            return True
-        except Exception as exc:
-            print(
-                "MediaPipe Tasks face unavailable. Expected face model at "
-                f"{config.FACE_MODEL_PATH}. Error: {exc}"
-            )
-            return False
-
-    def _init_solutions_face(self):
-        if not hasattr(mp, "solutions"):
-            return False
-
-        try:
+        if hasattr(mp, "solutions"):
             self._mode = "solutions"
             self.mp_face_mesh = mp.solutions.face_mesh
             self.face_mesh = self.mp_face_mesh.FaceMesh(
@@ -68,10 +23,30 @@ class FaceAnalyzer:
             )
             self.mp_drawing = mp.solutions.drawing_utils
             self.mp_drawing_styles = mp.solutions.drawing_styles
-            return True
+            return
+
+        self._mode = "tasks"
+        try:
+            from mediapipe.tasks.python import vision
+            from mediapipe.tasks.python.core import base_options
+
+            options = vision.FaceLandmarkerOptions(
+                base_options=base_options.BaseOptions(model_asset_path=config.FACE_MODEL_PATH),
+                running_mode=vision.RunningMode.IMAGE,
+                num_faces=1,
+                min_face_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_face_presence_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
+                output_face_blendshapes=False,
+                output_facial_transformation_matrixes=False,
+            )
+            self._face = vision.FaceLandmarker.create_from_options(options)
         except Exception as exc:
-            print(f"MediaPipe solutions face unavailable. Error: {exc}")
-            return False
+            self._available = False
+            print(
+                "FaceAnalyzer unavailable. Expected MediaPipe Tasks face model at "
+                f"{config.FACE_MODEL_PATH}. Error: {exc}"
+            )
 
     def analyze(self, frame):
         """

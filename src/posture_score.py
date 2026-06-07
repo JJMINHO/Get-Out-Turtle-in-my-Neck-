@@ -70,20 +70,19 @@ class PostureScoreCalculator:
             nose = pose_landmarks.get('NOSE')
             l_shoulder = pose_landmarks.get('LEFT_SHOULDER')
             r_shoulder = pose_landmarks.get('RIGHT_SHOULDER')
+            l_hip = pose_landmarks.get('LEFT_HIP')
+            r_hip = pose_landmarks.get('RIGHT_HIP')
             l_ear = pose_landmarks.get('LEFT_EAR')
             r_ear = pose_landmarks.get('RIGHT_EAR')
             l_eye = pose_landmarks.get('LEFT_EYE')
             r_eye = pose_landmarks.get('RIGHT_EYE')
 
-            # Hips are optional (often cut off in typical webcam views)
-            l_hip = pose_landmarks.get('LEFT_HIP')
-            r_hip = pose_landmarks.get('RIGHT_HIP')
-
-            if not all([nose, l_shoulder, r_shoulder, l_ear, r_ear, l_eye, r_eye]):
+            if not all([nose, l_shoulder, r_shoulder, l_hip, r_hip, l_ear, r_ear, l_eye, r_eye]):
                  return 0, "Missing Landmarks", 0, 0, 0, 0, "Unknown", 0, "Unknown"
 
             mid_shoulder = self._midpoint(l_shoulder, r_shoulder)
             mid_ear = self._midpoint(l_ear, r_ear)
+            mid_hip = self._midpoint(l_hip, r_hip)
             shoulder_width = max(self._distance(l_shoulder, r_shoulder), 0.001)
             face_width = self._calculate_face_width(face_landmarks)
             if face_width is None:
@@ -93,16 +92,8 @@ class PostureScoreCalculator:
             # Front-facing webcam proxies normalized by shoulder width.
             head_offset_ratio = abs(nose['x'] - mid_shoulder['x']) / shoulder_width
             head_height_ratio = (mid_shoulder['y'] - nose['y']) / shoulder_width
-            
-            if l_hip and r_hip:
-                mid_hip = self._midpoint(l_hip, r_hip)
-                torso_height_ratio = max(mid_hip['y'] - mid_shoulder['y'], 0) / shoulder_width
-                torso_offset_ratio = abs(mid_shoulder['x'] - mid_hip['x']) / shoulder_width
-            else:
-                # Fallback to baseline or defaults when hips are not detected.
-                torso_height_ratio = self.baseline_torso_height_ratio if self.baseline_torso_height_ratio is not None else 1.8
-                torso_offset_ratio = 0.0
-
+            torso_height_ratio = max(mid_hip['y'] - mid_shoulder['y'], 0) / shoulder_width
+            torso_offset_ratio = abs(mid_shoulder['x'] - mid_hip['x']) / shoulder_width
             shoulder_angle = self._calculate_slope(r_shoulder, l_shoulder)
             shoulder_slope = abs(180 - shoulder_angle) if shoulder_angle > 90 else abs(shoulder_angle)
 

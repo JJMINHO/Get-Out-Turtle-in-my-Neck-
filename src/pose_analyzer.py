@@ -3,7 +3,6 @@ Pose analyzer for extracting body landmarks using MediaPipe Pose.
 """
 import cv2
 import mediapipe as mp
-import os
 import src.config as config
 
 
@@ -50,48 +49,8 @@ class PoseAnalyzer:
         self._available = True
         self._pose = None
 
-        if self._init_solutions_pose():
-            return
-
-        if os.path.exists(config.POSE_MODEL_PATH) and self._init_tasks_pose():
-            return
-
-        self._available = False
-        print(
-            "PoseAnalyzer unavailable. Expected MediaPipe Tasks pose model at "
-            f"{config.POSE_MODEL_PATH} or MediaPipe solutions pose support."
-        )
-
-    def _init_tasks_pose(self):
-        try:
-            from mediapipe.tasks.python import vision
-            from mediapipe.tasks.python.core import base_options
-
-            options = vision.PoseLandmarkerOptions(
-                base_options=base_options.BaseOptions(
-                    model_asset_path=config.POSE_MODEL_PATH,
-                    delegate=base_options.BaseOptions.Delegate.CPU,
-                ),
-                running_mode=vision.RunningMode.IMAGE,
-                min_pose_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
-                min_pose_presence_confidence=config.MIN_DETECTION_CONFIDENCE,
-                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
-            )
-            self._pose = vision.PoseLandmarker.create_from_options(options)
-            self._mode = "tasks"
-            return True
-        except Exception as exc:
-            print(
-                "MediaPipe Tasks pose unavailable. Expected pose model at "
-                f"{config.POSE_MODEL_PATH}. Error: {exc}"
-            )
-            return False
-
-    def _init_solutions_pose(self):
-        if not hasattr(mp, "solutions"):
-            return False
-
-        try:
+        if hasattr(mp, "solutions"):
+            # Legacy MediaPipe "solutions" API.
             self._mode = "solutions"
             self.mp_pose = mp.solutions.pose
             self.pose = self.mp_pose.Pose(
@@ -99,10 +58,28 @@ class PoseAnalyzer:
                 min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
             )
             self.mp_drawing = mp.solutions.drawing_utils
-            return True
+            return
+
+        # MediaPipe Tasks API (newer builds of mediapipe).
+        self._mode = "tasks"
+        try:
+            from mediapipe.tasks.python import vision
+            from mediapipe.tasks.python.core import base_options
+
+            options = vision.PoseLandmarkerOptions(
+                base_options=base_options.BaseOptions(model_asset_path=config.POSE_MODEL_PATH),
+                running_mode=vision.RunningMode.IMAGE,
+                min_pose_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_pose_presence_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
+            )
+            self._pose = vision.PoseLandmarker.create_from_options(options)
         except Exception as exc:
-            print(f"MediaPipe solutions pose unavailable. Error: {exc}")
-            return False
+            self._available = False
+            print(
+                "PoseAnalyzer unavailable. Expected MediaPipe Tasks pose model at "
+                f"{config.POSE_MODEL_PATH}. Error: {exc}"
+            )
 
     def analyze(self, frame):
         """

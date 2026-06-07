@@ -825,9 +825,11 @@ class CameraWorker:
             print(f"Could not play alert sound: {exc}")
 
     def _open_camera(self):
-        # Give the OS a brief moment to finish releasing the previous session.
+        # Give AVFoundation a brief moment to finish releasing the previous session.
         time.sleep(0.2)
-        backends = self._camera_backend_candidates()
+        backend = None
+        if getattr(config, "CAMERA_BACKEND", None) == "avfoundation":
+            backend = getattr(cv2, "CAP_AVFOUNDATION", None)
 
         indices = []
         try:
@@ -841,67 +843,44 @@ class CameraWorker:
 
         last_error = None
         for pass_index in range(2):
-            for backend_name, backend in backends:
-                for camera_index in indices:
-                    cap = None
-                    try:
-                        cap = cv2.VideoCapture(camera_index, backend) if backend is not None else cv2.VideoCapture(camera_index)
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+            for camera_index in indices:
+                cap = None
+                try:
+                    cap = cv2.VideoCapture(camera_index, backend) if backend is not None else cv2.VideoCapture(camera_index)
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
 
-                        if not cap.isOpened():
-                            last_error = f"cap.isOpened() == False (index={camera_index}, backend={backend_name})"
-                        elif self._camera_has_readable_frame(cap):
-                            print(f"Camera opened: index={camera_index} backend={backend_name}")
-                            opened_cap = cap
-                            cap = None
-                            return opened_cap
-                        else:
-                            last_error = f"camera opened but no readable frame (index={camera_index}, backend={backend_name})"
-                    except Exception as exc:
-                        last_error = f"{type(exc).__name__}: {exc} (index={camera_index}, backend={backend_name})"
-                    finally:
-                        if cap is not None:
-                            try:
-                                cap.release()
-                            except Exception:
-                                pass
-                            del cap
-                            gc.collect()
+                    if not cap.isOpened():
+                        last_error = f"cap.isOpened() == False (index={camera_index})"
+                    elif self._camera_has_readable_frame(cap):
+                        print(f"Camera opened: index={camera_index} backend={config.CAMERA_BACKEND}")
+                        opened_cap = cap
+                        cap = None
+                        return opened_cap
+                    else:
+                        last_error = f"camera opened but no readable frame (index={camera_index})"
+                except Exception as exc:
+                    last_error = f"{type(exc).__name__}: {exc} (index={camera_index})"
+                finally:
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+                        del cap
+                        gc.collect()
 
             if pass_index == 0:
                 time.sleep(0.6)
 
         print("Error: Could not open any camera index.")
         print("Tried indices:", indices)
-        print("Backends:", [name for name, _backend in backends])
+        print("Backend:", getattr(config, "CAMERA_BACKEND", None))
         if last_error:
             print("Last error:", last_error)
-        print("Check camera permissions in your OS privacy settings.")
+        print("Check macOS permissions: System Settings -> Privacy & Security -> Camera.")
         print("Also ensure no other app is using the camera (Zoom/Meet/Photo Booth, etc).")
         return None
-
-    def _camera_backend_candidates(self):
-        preferred_backend = getattr(config, "CAMERA_BACKEND", None)
-        candidates = []
-
-        def add(name, backend):
-            if name != "default" and backend is None:
-                return
-            if (name, backend) not in candidates:
-                candidates.append((name, backend))
-
-        if preferred_backend == "avfoundation":
-            add("avfoundation", getattr(cv2, "CAP_AVFOUNDATION", None))
-        elif preferred_backend == "dshow":
-            add("dshow", getattr(cv2, "CAP_DSHOW", None))
-            add("msmf", getattr(cv2, "CAP_MSMF", None))
-        elif preferred_backend == "msmf":
-            add("msmf", getattr(cv2, "CAP_MSMF", None))
-            add("dshow", getattr(cv2, "CAP_DSHOW", None))
-
-        add("default", None)
-        return candidates
 
     def _camera_has_readable_frame(self, cap):
         for _attempt in range(10):

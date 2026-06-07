@@ -6,11 +6,11 @@ def load_dotenv():
     dotenv_paths = [
         os.path.abspath(".env"),
         os.path.join(os.getcwd(), ".env"),
-        os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", ".env"),
     ]
     if getattr(sys, "frozen", False):
         dotenv_paths.extend([
             os.path.join(os.path.dirname(sys.executable), ".env"),
+            os.path.join(os.path.expanduser("~/Library/Application Support"), "DeskFlow Coach", ".env"),
         ])
 
     dotenv_path = None
@@ -54,7 +54,7 @@ def _resource_path(*parts):
 def _data_dir():
     """Return a writable app data directory."""
     candidates = []
-    if sys.platform == "darwin":
+    if getattr(sys, "frozen", False):
         candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), APP_NAME))
     else:
         candidates.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs"))
@@ -80,14 +80,9 @@ CAMERA_INDEX = 0
 # Try these indices if CAMERA_INDEX fails.
 CAMERA_INDEX_FALLBACKS = [0, 1, 2]
 
-# Platform-specific OpenCV camera backend preference.
-# macOS usually works best with AVFoundation; Windows gets DShow/MSMF fallbacks.
-if sys.platform == "darwin":
-    CAMERA_BACKEND = "avfoundation"
-elif sys.platform.startswith("win"):
-    CAMERA_BACKEND = "dshow"
-else:
-    CAMERA_BACKEND = None
+# On macOS, AVFoundation is usually the most reliable OpenCV backend.
+# If None, OpenCV will choose a default backend.
+CAMERA_BACKEND = "avfoundation"  # "avfoundation" or None
 
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480

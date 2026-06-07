@@ -1,8 +1,7 @@
 opencv-python
-mediapipe==0.10.21; python_version < "3.13"
-mediapipe==0.10.35; python_version >= "3.13"
+mediapipe
 numpy
-rumps; sys_platform == "darwin"
+rumps
 pandas
 matplotlib
 customtkinter
