@@ -192,103 +192,37 @@ deskpose-coach/
 
 ---
 
-## Run From Source
+## Getting Started
 
+### 1. 소스코드 실행 (Run from Source)
 ```bash
-cd /Users/randonlb/Desktop/deskpose-coach
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
+# 가상환경 설정 및 패키지 설치
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# 앱 실행
 python main.py
 ```
+* **AI 피드백 활성화 (선택)**: `.env.example` 파일을 `.env`로 복사한 후 `OPENAI_API_KEY`를 작성해 줍니다. (빌드된 앱의 경우 `~/Library/Application Support/DeskFlow Coach/.env` 경로에 위치)
 
-Source-run data is saved under `outputs/`.
-
----
-
-## Windows Support
-
-Mac OS용 프로그램으로 초기 기획되어, Windows terminal mode는 현재 구현 중입니다. 
-
----
-
-## macOS 앱 실행
-
-패키징된 앱은 아래 파일로 실행할 수 있습니다.
-
-```text
-dist/DeskFlow Coach.app
-dist/DeskFlow_Coach.dmg
-```
-
-앱 데이터는 다음 경로에 저장됩니다.
-
-```text
-~/Library/Application Support/DeskFlow Coach
-```
-
----
-
-## macOS 빌드
-
+### 2. 앱 빌드 및 패키징 (Build & Package)
 ```bash
+# macOS .app 앱 번들 빌드
 ./scripts/build_macos_app.sh
+
+# .dmg 디스크 이미지 패키징 (선택)
+hdiutil create -volname "DeskFlow Coach" -srcfolder "dist/DeskFlow Coach.app" -ov -format UDZO "dist/DeskFlow_Coach.dmg"
 ```
 
-DMG 파일은 아래 명령어로 직접 생성할 수 있습니다.
-
-```bash
-hdiutil create -volname "DeskFlow Coach" \
-  -srcfolder "dist/DeskFlow Coach.app" \
-  -ov -format UDZO \
-  "dist/DeskFlow_Coach.dmg"
-```
-
----
-
-## API Key 설정
-
-AI 피드백 기능은 선택 사항입니다.  
-API Key가 없어도 로컬 규칙 기반 피드백은 사용할 수 있습니다.
-
-```bash
-cp .env.example .env
-```
-
-```text
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.4-mini
-
-또는,
-
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash
-```
-
-패키징된 앱에서는 `.env` 파일을 아래 경로에 두면 됩니다.
-
-```text
-~/Library/Application Support/DeskFlow Coach/.env
-```
-
-실제 API Key는 GitHub에 커밋하거나 앱에 포함하지 마세요.
+### 3. 중요 주의 사항
+* **카메라 권한**: 실행 시 카메라 권한 팝업을 승인해 주셔야 합니다. (미작동 시 `시스템 설정 -> 개인정보 보호 및 보안 -> 카메라`에서 터미널/IDE 또는 앱을 승인해 주세요)
+* **데이터 및 로그 저장 경로**: 
+  - 소스코드 실행 시: 프로젝트 루트의 `outputs/`
+  - 빌드된 앱 실행 시: `~/Library/Application Support/DeskFlow Coach/`
 
 ---
 
 ## 데이터 및 로그
-
-소스 코드로 실행할 경우:
-
-```text
-outputs/
-```
-
-패키징된 앱으로 실행할 경우:
-
-```text
-~/Library/Application Support/DeskFlow Coach
-```
 
 | 파일 | 설명 |
 |---|---|
@@ -298,20 +232,8 @@ outputs/
 | `calendar_events.csv` | 캘린더 일정 데이터 |
 | `app.log` | 배포 앱 실행 로그 |
 
----
-
-## 카메라 권한
-
-macOS에서 카메라 권한을 허용해야 합니다.
-
-```text
-System Settings
-→ Privacy & Security
-→ Camera
-→ Terminal, IDE, 또는 DeskFlow Coach 허용
-```
-
-다른 앱이 카메라를 사용 중이면 OpenCV capture가 실패할 수 있습니다.
+* 소스 실행: `outputs/`
+* 패키징 앱 실행: `~/Library/Application Support/DeskFlow Coach`
 
 ---
 
