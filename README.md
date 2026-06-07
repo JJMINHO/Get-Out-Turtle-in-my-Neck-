@@ -218,6 +218,10 @@ deskpose-coach/
 
 #### 1. 로컬 소스코드 실행
 ```bash
+# 저장소 클론 및 디렉토리 이동
+git clone https://github.com/JJMINHO/DeskFlow_Coach.git
+cd DeskFlow_Coach
+
 # 가상환경 구성 및 패키지 설치
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -225,7 +229,7 @@ pip install -r requirements.txt
 # 앱 실행
 python main.py
 ```
-* **AI 피드백 활성화 (선택)**: 프로젝트 루트 폴더에 `.env.example` 파일을 `.env`로 복사하여 API Key를 설정해 줍니다.
+* **AI 피드백 활성화 (선택)**: 클론된 프로젝트 루트 폴더에 `.env.example` 파일을 `.env`로 복사하여 API Key를 설정해 줍니다.
 
 #### 2. 앱 패키징 및 빌드
 ```bash
